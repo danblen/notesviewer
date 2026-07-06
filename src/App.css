@@ -78,40 +78,7 @@ body {
   z-index: 100;
 }
 
-.topbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* Directory button — the ONLY clickable element */
-.dir-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-size: var(--font-size);
-  font-family: var(--font-sans);
-  cursor: pointer;
-  transition: background .15s, border-color .15s;
-  white-space: nowrap;
-}
-.dir-button:hover {
-  background: var(--color-bg-hover);
-  border-color: var(--color-text-3);
-}
-.dir-button:active {
-  background: var(--color-bg-active);
-}
-.dir-button:disabled {
-  opacity: .5;
-  cursor: progress;
-}
+/* (directory opener now lives inside the spaces dropdown — see .space-action) */
 
 /* Level-1 items (right side of topbar, left-aligned within section) */
 .topbar-right {
@@ -123,7 +90,7 @@ body {
   scrollbar-width: none;
   flex: 1;
   justify-content: flex-start;
-  padding-left: 12px;
+  padding-left: 0;
 }
 .topbar-right::-webkit-scrollbar { display: none; }
 
@@ -314,6 +281,41 @@ body {
   padding: 1px 6px;
   border-radius: 8px;
   flex-shrink: 0;
+}
+
+/* Action item ("打开目录…") — click to open the OS directory picker */
+.space-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  font-size: var(--font-size);
+  cursor: pointer;
+  transition: background .1s;
+}
+.space-action:hover {
+  background: var(--color-accent-light);
+}
+.space-action.disabled {
+  opacity: .5;
+  pointer-events: none;
+  cursor: progress;
+}
+.space-action-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.space-action-name {
+  flex: 1;
+  white-space: nowrap;
+}
+.space-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--color-border);
 }
 
 /* ── Sidebar ─────────────────────────────────────────────── */

@@ -1,19 +1,21 @@
 import { useState, useRef, useCallback } from 'react';
-import { FolderIcon, FolderOpenIcon, FileTypeIcon, ChevronRight, SpacesIcon } from './Icons';
+import { FolderIcon, FolderOpenIcon, FileTypeIcon, ChevronRight, SpacesIcon, PlusIcon } from './Icons';
 
 /**
  * TopBar — persistent header.
  *
- * Left:   directory selector button (the ONLY clickable element).
- * Center: Level-1 items (horizontal, left-aligned).
- * Right:  recent-spaces switcher (hover to open dropdown, hover item to switch).
+ * Left/Center: Level-1 items (horizontal, left-aligned).
+ * Right:       notes-spaces switcher (hover to open dropdown).
  *
- * Hover behaviour:
+ * Spaces dropdown:
+ *  - First item "打开目录…" → CLICK to open the OS directory picker (the only click action).
+ *  - Other items (existing spaces) → hover 300ms to switch note root.
+ *
+ * Hover behaviour (L1/L2):
  *  - L1 folder → dropdown with L2 children (position:fixed, never clipped)
  *  - L1 file   → open file (debounced)
  *  - L2 folder → updates Sidebar with L3 children
  *  - L2 file   → open file (debounced)
- *  - Space item → switch to that note root (300ms hover delay)
  *
  * The currently-open file is highlighted in both L1 and L2 via `currentFileId`.
  */
@@ -42,7 +44,6 @@ export default function TopBar({
   const switchTimer = useRef(null);
 
   const activeSpace = recentSpaces.find(s => s.id === activeSpaceId);
-  const showSwitcher = recentSpaces.length > 0;
 
   // ── L1 handlers ──────────────────────────────────────────
   const handleL1Enter = useCallback((item, e) => {
@@ -91,11 +92,10 @@ export default function TopBar({
   // ── Spaces switcher handlers ─────────────────────────────
   const handleSpacesEnter = useCallback((e) => {
     clearTimeout(spacesCloseTimer.current);
-    if (!showSwitcher) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setSpacesPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
     setSpacesOpen(true);
-  }, [showSwitcher]);
+  }, []);
 
   const handleSpacesLeave = useCallback(() => {
     clearTimeout(switchTimer.current);
@@ -125,23 +125,18 @@ export default function TopBar({
     clearTimeout(switchTimer.current);
   }, []);
 
+  // "打开目录…" — click only (never hover), cancels any pending switch
+  const handleOpenDirClick = useCallback(() => {
+    if (loading) return;
+    clearTimeout(switchTimer.current);
+    setSpacesOpen(false);
+    onSelectDirectory();
+  }, [loading, onSelectDirectory]);
+
   // ── Render ───────────────────────────────────────────────
   return (
     <header className="topbar">
-      {/* Left: directory button */}
-      <div className="topbar-left">
-        <button
-          className="dir-button"
-          onClick={onSelectDirectory}
-          disabled={loading}
-          title="选择笔记根目录"
-        >
-          <FolderOpenIcon size={16} />
-          <span>{loading ? '加载中…' : (rootName || '选择目录')}</span>
-        </button>
-      </div>
-
-      {/* Center: Level-1 items (left-aligned within this section) */}
+      {/* Level-1 items (left-aligned) */}
       <nav className="topbar-right">
         {level1Items.map(item => (
           <div
@@ -160,19 +155,17 @@ export default function TopBar({
         ))}
       </nav>
 
-      {/* Right: recent-spaces switcher (hover to open) */}
-      {showSwitcher && (
-        <div
-          className={`spaces-switcher ${spacesOpen ? 'open' : ''} ${activeSpaceId ? '' : 'no-active'}`}
-          onMouseEnter={handleSpacesEnter}
-          onMouseLeave={handleSpacesLeave}
-          title="切换笔记空间"
-        >
-          <SpacesIcon size={15} />
-          <span className="spaces-label">{activeSpace?.name || '笔记空间'}</span>
-          <ChevronRight size={10} className="spaces-chevron" />
-        </div>
-      )}
+      {/* Right: notes-spaces switcher (hover to open) */}
+      <div
+        className={`spaces-switcher ${spacesOpen ? 'open' : ''} ${activeSpaceId ? '' : 'no-active'}`}
+        onMouseEnter={handleSpacesEnter}
+        onMouseLeave={handleSpacesLeave}
+        title="切换笔记空间 / 打开目录"
+      >
+        <SpacesIcon size={15} />
+        <span className="spaces-label">{activeSpace?.name || rootName || '笔记空间'}</span>
+        <ChevronRight size={10} className="spaces-chevron" />
+      </div>
 
       {/* Level-2 dropdown — rendered OUTSIDE .topbar-right to avoid overflow clipping. */}
       {hoveredL1 && hoveredL1.kind === 'directory' && (
@@ -212,7 +205,7 @@ export default function TopBar({
       )}
 
       {/* Spaces dropdown — position:fixed, right-aligned */}
-      {spacesOpen && showSwitcher && (
+      {spacesOpen && (
         <div
           className="spaces-dropdown"
           style={{
@@ -223,6 +216,16 @@ export default function TopBar({
           onMouseEnter={handleSpacesDropdownEnter}
           onMouseLeave={handleSpacesDropdownLeave}
         >
+          <div
+            className={`space-action ${loading ? 'disabled' : ''}`}
+            onClick={handleOpenDirClick}
+            onMouseEnter={() => clearTimeout(switchTimer.current)}
+            title="选择一个新的笔记根目录"
+          >
+            <span className="space-action-icon"><PlusIcon size={14} /></span>
+            <span className="space-action-name">打开目录…</span>
+          </div>
+          {recentSpaces.length > 0 && <div className="space-divider" />}
           {recentSpaces.map(space => (
             <div
               key={space.id}

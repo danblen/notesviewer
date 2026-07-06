@@ -125,6 +125,14 @@ export function SpacesIcon({ size = 16, className = '' }) {
   );
 }
 
+export function PlusIcon({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /**
  * Returns the appropriate icon component for a file based on its name.
  */
