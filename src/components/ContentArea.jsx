@@ -3,9 +3,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import hljs from 'highlight.js';
-import { getFileObject, getCodeLanguage } from '../utils/fileSystem';
+import { getFileObject, getCodeLanguage, writeFileContent } from '../utils/fileSystem';
+import { EditIcon, SaveIcon, EyeIcon, ExitIcon } from './Icons';
 
 const CONTENT_MIN = 400, CONTENT_MAX = 1800;
+
+// File types that can be edited in-app (text-based)
+const EDITABLE_TYPES = new Set(['markdown', 'code', 'text']);
 
 /**
  * ContentArea — renders the currently hovered file.
@@ -13,12 +17,17 @@ const CONTENT_MIN = 400, CONTENT_MAX = 1800;
  * Supported types: markdown (with code highlighting), PDF, image,
  * code (syntax highlighted via highlight.js), and other (fallback).
  *
+ * Markdown / code / text files are EDITABLE: a floating "编辑" button
+ * switches to a full editor (textarea + optional live preview for md).
+ * Saving writes back via the File System Access API (Chrome/Edge).
+ *
  * The reading column has an adjustable max-width, controlled by a
- * draggable handle on its right edge.
+ * draggable handle on its right edge (hidden while editing).
  */
-export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth }) {
+export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth, onDirtyChange }) {
   const areaRef = useRef(null);
   const [areaWidth, setAreaWidth] = useState(9999);
+  const [editing, setEditing] = useState(false);
 
   // Track content-area width so the resizer handle stays visible
   // even when the sidebar is resized or the window changes.
@@ -31,6 +40,13 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth 
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Leave edit mode (and clear dirty) whenever the open file changes.
+  useEffect(() => {
+    setEditing(false);
+    onDirtyChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file?.node?.id]);
 
   // ── Content column resize ───────────────────────────────
   const onContentResizeStart = useCallback((e) => {
@@ -67,10 +83,24 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth 
     );
   }
 
+  const editable = EDITABLE_TYPES.has(file.type);
+
   return (
     <main className="content-area" ref={areaRef}>
+      {/* Floating edit button (view mode only, editable files) */}
+      {editable && !editing && (
+        <div className="content-toolbar">
+          <button className="tool-btn" onClick={() => setEditing(true)} title="编辑此文件">
+            <EditIcon size={14} />
+            <span>编辑</span>
+          </button>
+        </div>
+      )}
+
       <div className="content-body">
-        {file.type === 'pdf' ? (
+        {editing && editable ? (
+          <Editor file={file} onDirtyChange={onDirtyChange} onExit={() => setEditing(false)} />
+        ) : file.type === 'pdf' ? (
           <PdfViewer file={file} />
         ) : (
           <div className="content-inner" style={{ maxWidth: effMax }}>
@@ -81,12 +111,16 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth 
           </div>
         )}
       </div>
-      <div
-        className="content-resizer"
-        style={{ left: Math.max(0, effMax - 3) }}
-        onMouseDown={onContentResizeStart}
-        title="拖动调整内容宽度"
-      />
+
+      {/* Width handle — hidden while editing (editor uses full width) */}
+      {!editing && (
+        <div
+          className="content-resizer"
+          style={{ left: Math.max(0, effMax - 3) }}
+          onMouseDown={onContentResizeStart}
+          title="拖动调整内容宽度"
+        />
+      )}
     </main>
   );
 }
@@ -98,6 +132,167 @@ function ErrorDisplay({ message }) {
       <div className="content-error-icon">⚠️</div>
       <p>无法读取文件</p>
       <p className="content-error-detail">{message}</p>
+    </div>
+  );
+}
+
+// ── Editor (markdown / code / text) ──────────────────────
+function Editor({ file, onDirtyChange, onExit }) {
+  const [text, setText] = useState('');
+  const [original, setOriginal] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Load file text
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setDirty(false);
+    getFileObject(file.node).then(async (f) => {
+      const t = await f.text();
+      if (!cancelled) {
+        setText(t);
+        setOriginal(t);
+        setLoading(false);
+      }
+    }).catch((err) => {
+      if (!cancelled) {
+        console.error('Editor load error:', err);
+        setError(err.message || String(err));
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [file.node]);
+
+  // Report dirty state up so App can guard hover-switching
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
+
+  const onChange = (e) => {
+    const v = e.target.value;
+    setText(v);
+    setDirty(v !== original);
+  };
+
+  const handleSave = useCallback(async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await writeFileContent(file.node, text);
+      setOriginal(text);
+      setDirty(false);
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+    } catch (err) {
+      console.error('Save error:', err);
+      setError(err.message || String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [dirty, saving, file.node, text]);
+
+  // ⌘S / Ctrl+S to save
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleSave]);
+
+  // Tab key → insert two spaces (don't lose focus)
+  const onKeyDown = (e) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const ta = e.target;
+      const s = ta.selectionStart;
+      const en = ta.selectionEnd;
+      const insert = '  ';
+      const newText = text.slice(0, s) + insert + text.slice(en);
+      setText(newText);
+      setDirty(newText !== original);
+      requestAnimationFrame(() => {
+        ta.selectionStart = ta.selectionEnd = s + insert.length;
+      });
+    }
+  };
+
+  const handleExit = () => {
+    if (dirty && !window.confirm('有未保存的修改，确定退出编辑？')) return;
+    onExit();
+  };
+
+  if (loading) return <div className="content-loading">加载中…</div>;
+  if (error && !text) return <ErrorDisplay message={error} />;
+
+  const isMarkdown = file.type === 'markdown';
+
+  return (
+    <div className="editor-wrap">
+      <div className="editor-toolbar">
+        <span className="editor-filename" title={file.name}>{file.name}</span>
+        <div className="editor-actions">
+          {dirty && <span className="editor-dirty" title="未保存的修改">●</span>}
+          {savedFlash && <span className="editor-saved">已保存</span>}
+          {isMarkdown && (
+            <button
+              className={`tool-btn ${showPreview ? 'active' : ''}`}
+              onClick={() => setShowPreview(v => !v)}
+              title="分屏预览"
+            >
+              <EyeIcon size={14} />
+              <span>预览</span>
+            </button>
+          )}
+          <button
+            className="tool-btn primary"
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            title="保存 (⌘S)"
+          >
+            <SaveIcon size={14} />
+            <span>{saving ? '保存中…' : '保存'}</span>
+          </button>
+          <button className="tool-btn" onClick={handleExit} title="退出编辑">
+            <ExitIcon size={14} />
+            <span>退出</span>
+          </button>
+        </div>
+        {error && <span className="editor-error-msg" title={error}>{error}</span>}
+      </div>
+      <div className={`editor-body ${showPreview && isMarkdown ? 'split' : ''}`}>
+        <textarea
+          className="editor-textarea"
+          value={text}
+          onChange={onChange}
+          onKeyDown={onKeyDown}
+          spellCheck={false}
+          autoFocus
+          placeholder="开始编辑…"
+        />
+        {showPreview && isMarkdown && (
+          <div className="editor-preview markdown-content">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+            >
+              {text}
+            </ReactMarkdown>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

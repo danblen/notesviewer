@@ -133,6 +133,84 @@ export function PlusIcon({ size = 16, className = '' }) {
   );
 }
 
+export function EditIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M3 13l3-1 7.5-7.5-2-2L4 10l-1 3z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+      <path d="M10 3.5l2 2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function SaveIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M3 8.5l3 3 7-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function EyeIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
+export function ExitIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function TrashIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M3 4.5h10M6.5 4.5V3.2c0-.3.2-.5.5-.5h2c.3 0 .5.2.5.5v1.3M4.5 4.5l.5 8c0 .3.2.5.5.5h5c.3 0 .5-.2.5-.5l.5-8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.8 7v3.5M9.2 7v3.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function MoreIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <circle cx="3.5" cy="8" r="1.3" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+      <circle cx="12.5" cy="8" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function RenameIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M2.5 13.5l.5-2.5L9.5 4.5l2 2L5 13l-2.5.5z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+      <path d="M9.5 4.5l1-1 2 2-1 1" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function NewFolderIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path
+        d="M1.5 4.2c0-.4.3-.7.7-.7h3.1c.2 0 .4.1.5.2l1.1 1.1h6.9c.4 0 .7.3.7.7v7.6c0 .4-.3.7-.7.7H2.2c-.4 0-.7-.3-.7-.7V4.2z"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+        fill="currentColor"
+        fillOpacity="0.08"
+      />
+      <path d="M8 7v4M6 9h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /**
  * Returns the appropriate icon component for a file based on its name.
  */

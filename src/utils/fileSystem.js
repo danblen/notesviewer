@@ -129,12 +129,34 @@ async function buildTreeFSA(dirHandle, basePath = '') {
   for await (const entry of dirHandle.values()) {
     const path = basePath ? `${basePath}/${entry.name}` : entry.name;
     const node = makeNode(entry.name, entry.kind, path, entry);
+    node.parentHandle = dirHandle; // needed for delete / create operations
     if (entry.kind === 'directory') {
       node.children = await buildTreeFSA(entry, path);
     }
     children.push(node);
   }
   return sortTreeNodes(children);
+}
+
+// ── Public: rebuild tree from an existing root handle ──────
+// Used after file delete/create to refresh the in-memory tree.
+
+export async function rebuildTree(rootHandle) {
+  return buildTreeFSA(rootHandle);
+}
+
+// ── Public: find a tree node by its path ───────────────────
+
+export function findNodeByPath(tree, path) {
+  if (!path) return null;
+  for (const node of tree) {
+    if (node.path === path) return node;
+    if (node.kind === 'directory' && node.children) {
+      const found = findNodeByPath(node.children, path);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 // ── Fallback: build tree from FileList (webkitdirectory) ─────────
@@ -231,6 +253,123 @@ export async function getFileObject(fileNode) {
   }
 
   throw new Error('File not accessible: no handle or file object');
+}
+
+// ── Public: write text content back to a file (FSA only) ─────────
+//
+// Uses FileSystemFileHandle.createWritable(). Requires readwrite
+// permission — requests it on demand (browser prompts the user).
+// Not available in the webkitdirectory fallback (Safari/Firefox):
+// those File objects are read-only.
+
+async function ensureWritePermission(handle) {
+  const opts = { mode: 'readwrite' };
+  if ((await handle.queryPermission(opts)) === 'granted') return true;
+  if ((await handle.requestPermission(opts)) === 'granted') return true;
+  return false;
+}
+
+export async function writeFileContent(fileNode, content) {
+  if (!fileNode) throw new Error('Invalid file node');
+  if (!fileNode.handle) {
+    throw new Error('当前浏览器不支持写入文件，请使用 Chrome 或 Edge 打开');
+  }
+  const granted = await ensureWritePermission(fileNode.handle);
+  if (!granted) throw new Error('未获得文件写入权限');
+  const writable = await fileNode.handle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
+// ── Public: delete a file or directory from disk (FSA only) ──
+//
+// Uses the parent directory handle's removeEntry(). For directories,
+// { recursive: true } removes all contents. Requires readwrite
+// permission on the parent directory (requested on demand).
+
+export async function deleteEntry(node) {
+  if (!node) throw new Error('Invalid node');
+  if (!node.parentHandle) {
+    throw new Error('当前浏览器不支持文件管理操作，请使用 Chrome 或 Edge 打开');
+  }
+  const granted = await ensureWritePermission(node.parentHandle);
+  if (!granted) throw new Error('未获得删除权限');
+  await node.parentHandle.removeEntry(node.name, {
+    recursive: node.kind === 'directory',
+  });
+}
+
+// ── Public: create a new file inside a directory (FSA only) ──
+
+export async function createFileEntry(dirHandle, filename) {
+  if (!dirHandle) {
+    throw new Error('当前浏览器不支持文件管理操作，请使用 Chrome 或 Edge 打开');
+  }
+  const granted = await ensureWritePermission(dirHandle);
+  if (!granted) throw new Error('未获得文件创建权限');
+  return dirHandle.getFileHandle(filename, { create: true });
+}
+
+// ── Public: create a new directory inside a directory (FSA only) ──
+
+export async function createDirectoryEntry(dirHandle, dirname) {
+  if (!dirHandle) {
+    throw new Error('当前浏览器不支持文件管理操作，请使用 Chrome 或 Edge 打开');
+  }
+  const granted = await ensureWritePermission(dirHandle);
+  if (!granted) throw new Error('未获得文件夹创建权限');
+  return dirHandle.getDirectoryHandle(dirname, { create: true });
+}
+
+// ── Public: rename a file or directory (FSA only) ──────────
+//
+// For files: uses FileSystemFileHandle.move() (Chromium). If move()
+// is not available, falls back to copy-content + delete-old.
+// For directories: creates a new directory with the new name,
+// recursively copies all contents, then removes the old directory.
+
+async function copyDirectoryContents(srcHandle, destHandle) {
+  for await (const entry of srcHandle.values()) {
+    if (entry.kind === 'file') {
+      const file = await entry.getFile();
+      const newFileHandle = await destHandle.getFileHandle(entry.name, { create: true });
+      const writable = await newFileHandle.createWritable();
+      await writable.write(file);
+      await writable.close();
+    } else {
+      const newSubDir = await destHandle.getDirectoryHandle(entry.name, { create: true });
+      await copyDirectoryContents(entry, newSubDir);
+    }
+  }
+}
+
+export async function renameEntry(node, newName) {
+  if (!node) throw new Error('Invalid node');
+  if (!node.parentHandle) {
+    throw new Error('当前浏览器不支持文件管理操作，请使用 Chrome 或 Edge 打开');
+  }
+  const granted = await ensureWritePermission(node.parentHandle);
+  if (!granted) throw new Error('未获得重命名权限');
+
+  if (node.kind === 'file') {
+    // Try move() first — efficient, Chromium-specific
+    if (typeof node.handle.move === 'function') {
+      await node.handle.move(newName);
+    } else {
+      // Fallback: copy content + delete old
+      const oldFile = await node.handle.getFile();
+      const newHandle = await node.parentHandle.getFileHandle(newName, { create: true });
+      const writable = await newHandle.createWritable();
+      await writable.write(oldFile);
+      await writable.close();
+      await node.parentHandle.removeEntry(node.name);
+    }
+  } else {
+    // Directory: create new dir, copy contents, delete old
+    const newDirHandle = await node.parentHandle.getDirectoryHandle(newName, { create: true });
+    await copyDirectoryContents(node.handle, newDirHandle);
+    await node.parentHandle.removeEntry(node.name, { recursive: true });
+  }
 }
 
 // ============================================================

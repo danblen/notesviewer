@@ -282,6 +282,37 @@ body {
   border-radius: 8px;
   flex-shrink: 0;
 }
+.space-delete,
+.space-more-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  transition: background .1s, color .1s;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.space-item:hover .space-delete,
+.space-item:hover .space-more-btn {
+  opacity: 1;
+}
+.space-delete:hover,
+.space-more-btn:hover {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
+.space-item.more-open .space-more-btn {
+  opacity: 1;
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
 
 /* Action item ("打开目录…") — click to open the OS directory picker */
 .space-action {
@@ -335,6 +366,29 @@ body {
   color: var(--color-text-3);
   font-size: var(--font-size-sm);
   line-height: 1.6;
+}
+
+/* Sidebar header — folder name + create button */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 10;
+}
+.sidebar-header-name {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Resizers (draggable width handles) ──────────────────── */
@@ -451,6 +505,174 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+/* Action buttons (appear on row hover, right-aligned) */
+.nav-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity .12s;
+  flex-shrink: 0;
+}
+.nav-item-row:hover .nav-item-actions {
+  opacity: 1;
+}
+.nav-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  transition: background .1s, color .1s;
+  padding: 0;
+}
+.nav-action-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+.nav-action-btn.create:hover {
+  color: var(--color-accent);
+}
+.nav-action-btn.delete:hover {
+  color: #d93025;
+  background: rgba(217, 48, 37, 0.08);
+}
+.nav-action-btn.more:hover {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
+.nav-item-row.more-open {
+  background: var(--color-bg-hover);
+}
+
+/* ── Inline rename / create input ────────────────────────── */
+.nav-rename-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--color-accent);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: var(--font-size);
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+  outline: none;
+  height: 22px;
+}
+.nav-create-row {
+  background: var(--color-accent-light);
+}
+
+/* ── ⋯ More-menu dropdown (position:fixed) ──────────────── */
+.more-menu {
+  min-width: 120px;
+  max-width: 200px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  z-index: 300;
+  animation: dropdown-in .1s ease-out;
+}
+.more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--font-size);
+  cursor: pointer;
+  transition: background .1s;
+  white-space: nowrap;
+}
+.more-menu-item:hover {
+  background: var(--color-bg-hover);
+}
+.more-menu-item.danger {
+  color: #d93025;
+}
+.more-menu-item.danger:hover {
+  background: rgba(217, 48, 37, 0.08);
+}
+.more-menu-item.danger .more-menu-icon {
+  color: #d93025;
+}
+.more-menu-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-3);
+  flex-shrink: 0;
+}
+.more-menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--color-border);
+}
+
+/* ── Confirmation popover (inside more-menu) ─────────────── */
+.more-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 299;
+  background: transparent;
+}
+.more-confirm {
+  min-width: 160px;
+  max-width: 220px;
+  padding: 4px 0;
+}
+.more-confirm-msg {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  line-height: 1.5;
+  padding: 4px 10px 8px;
+}
+.more-confirm-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.more-confirm-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 4px;
+  justify-content: flex-end;
+}
+.more-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 3px 12px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background .1s, border-color .1s;
+  white-space: nowrap;
+}
+.more-btn.cancel {
+  background: var(--color-bg);
+  color: var(--color-text-2);
+}
+.more-btn.cancel:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-text-3);
+}
+.more-btn.danger {
+  background: #d93025;
+  color: #fff;
+  border-color: #d93025;
+}
+.more-btn.danger:hover {
+  filter: brightness(0.92);
 }
 
 /* ── Inline children (tree expansion within sidebar) ────── */
@@ -586,6 +808,139 @@ body {
 .content-unsupported-name {
   font-size: var(--font-size-sm);
   font-family: var(--font-mono);
+}
+
+/* ── Content toolbar (floating edit button) ─────────────── */
+.content-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-2);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+  white-space: nowrap;
+}
+.tool-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+  border-color: var(--color-text-3);
+}
+.tool-btn.primary {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+.tool-btn.primary:hover {
+  filter: brightness(0.92);
+}
+.tool-btn.primary:disabled {
+  opacity: .45;
+  cursor: default;
+  filter: none;
+}
+.tool-btn.active {
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* ── Editor ─────────────────────────────────────────────── */
+.editor-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+}
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+  flex-shrink: 0;
+}
+.editor-filename {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-2);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.editor-dirty {
+  color: var(--color-accent);
+  font-size: 10px;
+  line-height: 1;
+}
+.editor-saved {
+  font-size: var(--font-size-sm);
+  color: #34a853;
+}
+.editor-error-msg {
+  font-size: var(--font-size-sm);
+  color: #d93025;
+  margin-left: 8px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.editor-body.split {
+  flex-direction: row;
+}
+.editor-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 20px 28px 80px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+.editor-body.split .editor-textarea {
+  border-right: 1px solid var(--color-border);
+}
+.editor-preview {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--color-bg-secondary);
 }
 
 /* ── Markdown viewer ─────────────────────────────────────── */
