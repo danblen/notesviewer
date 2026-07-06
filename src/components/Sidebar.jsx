@@ -4,16 +4,17 @@ import NavMenu from './NavMenu';
  * Sidebar — persistent left panel showing Level-3+ items.
  *
  * Content updates when the user hovers on a Level-2 folder in the
- * TopBar dropdown.  Once populated, the sidebar keeps its content
- * until another L2 folder is hovered.
+ * TopBar dropdown.  Width is adjustable via the resizer handle in App.
+ * The currently-open file is highlighted.
  */
-export default function Sidebar({ items, onFileHover, onFileLeave }) {
+export default function Sidebar({ items, onFileHover, onFileLeave, currentFileId, width }) {
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ width }}>
       <NavMenu
         items={items}
         onFileHover={onFileHover}
         onFileLeave={onFileLeave}
+        currentFileId={currentFileId}
         variant="sidebar"
       />
     </aside>

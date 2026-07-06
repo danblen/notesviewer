@@ -106,6 +106,25 @@ export function TextIcon({ size = 16, className = '' }) {
   );
 }
 
+export function CodeIcon({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M3.5 1.8c0-.3.3-.6.6-.6h5.2l3.5 3.5v9.1c0 .3-.3.6-.6.6H4.1c-.3 0-.6-.3-.6-.6V1.8z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" fill="currentColor" fillOpacity="0.05" />
+      <path d="M6 6.5L4 8l2 1.5M10 6.5L12 8l-2 1.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function SpacesIcon({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M8 2L14 5L8 8L2 5L8 2Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" fill="currentColor" fillOpacity="0.08" />
+      <path d="M2.5 8L8 10.8L13.5 8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M2.5 11L8 13.8L13.5 11" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /**
  * Returns the appropriate icon component for a file based on its name.
  */
@@ -114,5 +133,10 @@ export function FileTypeIcon({ name, size = 16 }) {
   if (['md', 'markdown', 'mdx'].includes(ext)) return <MarkdownIcon size={size} />;
   if (ext === 'pdf') return <PdfIcon size={size} />;
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'].includes(ext)) return <ImageIcon size={size} />;
+  // Code file extensions → code icon
+  const codeExts = ['js','jsx','mjs','cjs','ts','tsx','json','json5','jsonc','css','scss','sass','less','styl','html','htm','xml','xhtml','vue','svelte','yml','yaml','toml','ini','conf','cfg','py','pyw','pyi','java','kt','kts','scala','groovy','c','h','cpp','cc','cxx','hpp','hh','cs','go','rs','rb','erb','php','swift','sh','bash','zsh','fish','ksh','bat','cmd','ps1','sql','graphql','gql','lua','r','dart','pl','pm','clj','cljs','edn','ex','exs','hs','elm','ml','mli','proto','diff','patch','dockerfile','makefile','mk','cmake','nginx','vim','tf','txt','log','csv','env'];
+  if (codeExts.includes(ext)) return <CodeIcon size={size} />;
+  const base = name.toLowerCase();
+  if (base === 'dockerfile' || base === 'makefile') return <CodeIcon size={size} />;
   return <TextIcon size={size} />;
 }

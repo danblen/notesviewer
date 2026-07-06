@@ -11,9 +11,9 @@ import { FolderIcon, FileTypeIcon, ChevronRight } from './Icons';
  *
  * Children are rendered directly below the parent item (indented).
  * Expansion persists — does NOT auto-collapse on mouse leave.
- * Hovering the expand icon again toggles it off.
+ * The currently-open file row is highlighted via `currentFileId`.
  */
-export default function NavMenu({ items, onFileHover, onFileLeave, variant = 'sidebar' }) {
+export default function NavMenu({ items, onFileHover, onFileLeave, currentFileId, variant = 'sidebar' }) {
   const [expandedItem, setExpandedItem] = useState(null);
   const toggleTimerRef = useRef(null);
 
@@ -63,6 +63,7 @@ export default function NavMenu({ items, onFileHover, onFileLeave, variant = 'si
                       items={item.children}
                       onFileHover={onFileHover}
                       onFileLeave={onFileLeave}
+                      currentFileId={currentFileId}
                       variant={variant}
                     />
                   ) : (
@@ -73,7 +74,7 @@ export default function NavMenu({ items, onFileHover, onFileLeave, variant = 'si
             </>
           ) : (
             <div
-              className="nav-item-row file-row"
+              className={`nav-item-row file-row ${currentFileId === item.id ? 'active' : ''}`}
               onMouseEnter={() => onFileHover(item)}
               onMouseLeave={onFileLeave}
             >

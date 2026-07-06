@@ -1,19 +1,64 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getFileObject } from '../utils/fileSystem';
+import rehypeHighlight from 'rehype-highlight';
+import hljs from 'highlight.js';
+import { getFileObject, getCodeLanguage } from '../utils/fileSystem';
+
+const CONTENT_MIN = 400, CONTENT_MAX = 1800;
 
 /**
  * ContentArea — renders the currently hovered file.
  *
- * Supported types: markdown, PDF, image, plain text.
- * All viewers include error handling — a failed read shows
- * an error message instead of hanging on "加载中…" forever.
+ * Supported types: markdown (with code highlighting), PDF, image,
+ * code (syntax highlighted via highlight.js), and other (fallback).
+ *
+ * The reading column has an adjustable max-width, controlled by a
+ * draggable handle on its right edge.
  */
-export default function ContentArea({ file }) {
+export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth }) {
+  const areaRef = useRef(null);
+  const [areaWidth, setAreaWidth] = useState(9999);
+
+  // Track content-area width so the resizer handle stays visible
+  // even when the sidebar is resized or the window changes.
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const measure = () => setAreaWidth(el.getBoundingClientRect().width);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ── Content column resize ───────────────────────────────
+  const onContentResizeStart = useCallback((e) => {
+    e.preventDefault();
+    const rect = areaRef.current.getBoundingClientRect();
+    const onMove = (ev) => {
+      const w = Math.min(CONTENT_MAX, Math.max(CONTENT_MIN, ev.clientX - rect.left));
+      setContentMaxWidth(w);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [setContentMaxWidth]);
+
+  // Effective column width (clamped to available area)
+  const effMax = Math.min(contentMaxWidth, areaWidth || 9999);
+
+  // ── Empty state ─────────────────────────────────────────
   if (!file) {
     return (
-      <main className="content-area">
+      <main className="content-area" ref={areaRef}>
         <div className="content-empty">
           <div className="content-empty-icon">📖</div>
           <p>将鼠标悬停在文件上即可阅读</p>
@@ -23,14 +68,22 @@ export default function ContentArea({ file }) {
   }
 
   return (
-    <main className="content-area">
+    <main className="content-area" ref={areaRef}>
       <div className="content-body">
-        {file.type === 'markdown' && <MarkdownViewer file={file} />}
-        {file.type === 'pdf' && <PdfViewer file={file} />}
-        {file.type === 'image' && <ImageViewer file={file} />}
-        {file.type === 'text' && <TextViewer file={file} />}
-        {file.type === 'other' && <UnsupportedViewer file={file} />}
+        <div className="content-inner" style={{ maxWidth: effMax }}>
+          {file.type === 'markdown' && <MarkdownViewer file={file} />}
+          {file.type === 'pdf' && <PdfViewer file={file} />}
+          {file.type === 'image' && <ImageViewer file={file} />}
+          {(file.type === 'code' || file.type === 'text') && <CodeViewer file={file} />}
+          {file.type === 'other' && <UnsupportedViewer file={file} />}
+        </div>
       </div>
+      <div
+        className="content-resizer"
+        style={{ left: Math.max(0, effMax - 3) }}
+        onMouseDown={onContentResizeStart}
+        title="拖动调整内容宽度"
+      />
     </main>
   );
 }
@@ -77,7 +130,12 @@ function MarkdownViewer({ file }) {
 
   return (
     <div className="markdown-content">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -146,8 +204,8 @@ function ImageViewer({ file }) {
   );
 }
 
-// ── Plain text ────────────────────────────────────────────
-function TextViewer({ file }) {
+// ── Code (syntax highlighted) ─────────────────────────────
+function CodeViewer({ file }) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -164,7 +222,7 @@ function TextViewer({ file }) {
       }
     }).catch((err) => {
       if (!cancelled) {
-        console.error('Text read error:', err);
+        console.error('Code read error:', err);
         setError(err.message || String(err));
         setLoading(false);
       }
@@ -175,10 +233,33 @@ function TextViewer({ file }) {
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
 
+  const lang = getCodeLanguage(file.name);
+  const supported = lang !== 'plaintext' && hljs.getLanguage(lang);
+  // Guard against huge files slowing down highlighting
+  const tooLarge = content.length > 500_000;
+
+  let html = null;
+  if (supported && !tooLarge) {
+    try {
+      html = hljs.highlight(content, { language: lang }).value;
+    } catch {
+      html = null;
+    }
+  }
+
   return (
-    <pre className="text-viewer">
-      <code>{content}</code>
-    </pre>
+    <div className="code-viewer">
+      <pre className="code-pre">
+        {html ? (
+          <code
+            className={`hljs language-${lang}`}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        ) : (
+          <code>{content}</code>
+        )}
+      </pre>
+    </div>
   );
 }
 
