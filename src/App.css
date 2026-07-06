@@ -482,11 +482,14 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Inner reading column — constrained width, left-aligned */
 .content-inner {
   min-height: 100%;
+  flex-shrink: 0;
 }
 
 /* Content column resizer handle */
@@ -675,10 +678,11 @@ body {
 /* ── PDF viewer ──────────────────────────────────────────── */
 .pdf-viewer {
   width: 100%;
-  height: 100%;
+  flex: 1 1 0;
+  min-height: 0;
   border: none;
   background: var(--color-bg);
-  min-height: 100%;
+  display: block;
 }
 
 /* ── Image viewer ────────────────────────────────────────── */

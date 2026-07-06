@@ -44,31 +44,31 @@ export default function NavMenu({ items, onFileHover, onFileLeave, currentFileId
           {item.kind === 'directory' ? (
             <>
               <div className="nav-item-row folder-row">
-                <span
-                  className={`expand-icon ${expandedItem?.id === item.id ? 'expanded' : ''}`}
-                  onMouseEnter={() => handleExpandEnter(item)}
-                  onMouseLeave={handleExpandLeave}
-                >
-                  <ChevronRight size={12} />
-                </span>
+                {item.children && item.children.length > 0 ? (
+                  <span
+                    className={`expand-icon ${expandedItem?.id === item.id ? 'expanded' : ''}`}
+                    onMouseEnter={() => handleExpandEnter(item)}
+                    onMouseLeave={handleExpandLeave}
+                  >
+                    <ChevronRight size={12} />
+                  </span>
+                ) : (
+                  <span className="expand-icon-placeholder" />
+                )}
                 <span className="nav-item-icon"><FolderIcon size={15} /></span>
                 <span className="nav-item-name">{item.name}</span>
               </div>
 
               {/* Inline expansion — children rendered directly below, indented */}
-              {expandedItem?.id === item.id && (
+              {expandedItem?.id === item.id && item.children && item.children.length > 0 && (
                 <div className="nav-children">
-                  {item.children && item.children.length > 0 ? (
-                    <NavMenu
-                      items={item.children}
-                      onFileHover={onFileHover}
-                      onFileLeave={onFileLeave}
-                      currentFileId={currentFileId}
-                      variant={variant}
-                    />
-                  ) : (
-                    <div className="nav-children-empty">空文件夹</div>
-                  )}
+                  <NavMenu
+                    items={item.children}
+                    onFileHover={onFileHover}
+                    onFileLeave={onFileLeave}
+                    currentFileId={currentFileId}
+                    variant={variant}
+                  />
                 </div>
               )}
             </>

@@ -70,13 +70,16 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth 
   return (
     <main className="content-area" ref={areaRef}>
       <div className="content-body">
-        <div className="content-inner" style={{ maxWidth: effMax }}>
-          {file.type === 'markdown' && <MarkdownViewer file={file} />}
-          {file.type === 'pdf' && <PdfViewer file={file} />}
-          {file.type === 'image' && <ImageViewer file={file} />}
-          {(file.type === 'code' || file.type === 'text') && <CodeViewer file={file} />}
-          {file.type === 'other' && <UnsupportedViewer file={file} />}
-        </div>
+        {file.type === 'pdf' ? (
+          <PdfViewer file={file} />
+        ) : (
+          <div className="content-inner" style={{ maxWidth: effMax }}>
+            {file.type === 'markdown' && <MarkdownViewer file={file} />}
+            {file.type === 'image' && <ImageViewer file={file} />}
+            {(file.type === 'code' || file.type === 'text') && <CodeViewer file={file} />}
+            {file.type === 'other' && <UnsupportedViewer file={file} />}
+          </div>
+        )}
       </div>
       <div
         className="content-resizer"
