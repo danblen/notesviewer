@@ -74,8 +74,10 @@ export default function SpaceSelector({ rootName, loading, recentSpaces, activeS
 
   const handleDeleteAction = useCallback(() => {
     const space = recentSpaces.find(s => s.id === spaceMore?.spaceId);
-    if (space) setSpaceConfirm({ space });
-  }, [recentSpaces, spaceMore]);
+    if (!space) return;
+    closeMore();
+    onDeleteSpace(space.id);
+  }, [recentSpaces, spaceMore, closeMore, onDeleteSpace]);
 
   const confirmDelete = useCallback(() => {
     const space = spaceConfirm?.space;
@@ -153,30 +155,16 @@ export default function SpaceSelector({ rootName, loading, recentSpaces, activeS
 
       {spaceMore && (
         <>
-          {spaceConfirm && <div className="more-overlay" onClick={closeMore} />}
           <div
             className="more-menu space-more-menu"
             style={{ position: 'fixed', top: spaceMore.pos.top, left: spaceMore.pos.left }}
             onMouseEnter={handleMenuEnter}
             onMouseLeave={handleMenuLeave}
           >
-            {spaceConfirm ? (
-              <div className="more-confirm">
-                <div className="more-confirm-msg">
-                  确认删除笔记空间「{spaceConfirm.space.name}」？
-                  <span className="more-confirm-sub">仅从应用中移除，不会删除磁盘文件</span>
-                </div>
-                <div className="more-confirm-actions">
-                  <button className="more-btn cancel" onClick={closeMore}>取消</button>
-                  <button className="more-btn danger" onClick={confirmDelete}>删除</button>
-                </div>
-              </div>
-            ) : (
-              <div className="more-menu-item danger" onClick={handleDeleteAction}>
+            <div className="more-menu-item danger" onClick={handleDeleteAction}>
                 <span className="more-menu-icon"><TrashIcon size={14} /></span>
                 <span>删除</span>
               </div>
-            )}
           </div>
         </>
       )}
