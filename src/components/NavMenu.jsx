@@ -103,6 +103,7 @@ function NavMenuInner({
     setConfirmDelete(null);
   }, []);
 
+
   // ── Dropdown action handlers ─────────────────────────────
   const startRename = useCallback((item) => {
     setRenaming({ id: item.id, value: item.name });
@@ -248,17 +249,17 @@ function NavMenuInner({
             {item.kind === 'directory' ? (
               <>
                 <div className={`nav-item-row folder-row ${isMoreOpen(item.id) ? 'more-open' : ''}`}>
-                  {item.kind === 'directory' ? (
-                    <span
-                      className={`expand-icon ${expandedItemId === item.id ? 'expanded' : ''}`}
-                      onMouseEnter={() => handleExpandEnter(item)}
-                      onMouseLeave={handleExpandLeave}
-                    >
-                      <ChevronRight size={12} />
-                    </span>
-                  ) : (
-                    <span className="expand-icon-placeholder" />
-                  )}
+                  {item.kind === 'directory'
+                  ? (item.children !== null && item.children.length === 0
+                    ? <span className="expand-icon-placeholder" />
+                    : <span
+                        className={`expand-icon ${expandedItemId === item.id ? 'expanded' : ''}`}
+                        onMouseEnter={() => handleExpandEnter(item)}
+                        onMouseLeave={handleExpandLeave}
+                      >
+                        <ChevronRight size={12} />
+                      </span>)
+                  : <span className="expand-icon-placeholder" />}
                   <span className="nav-item-icon"><FolderIcon size={15} /></span>
                   {isRenaming ? renameInput : <span className="nav-item-name">{item.name}</span>}
                   {!isRenaming && moreBtn(item)}
@@ -291,7 +292,7 @@ function NavMenuInner({
                       </div>
                     )}
                     {item.children === null ? (
-                      <div className="nav-loading">加载中…</div>
+                      <div className="nav-loading"><span className="nav-item-icon"><FolderIcon size={15} /></span>加载中…</div>
                     ) : item.children.length > 0 ? (
                       <NavMenu
                         items={item.children}
@@ -305,9 +306,7 @@ function NavMenuInner({
                         onRenameEntry={onRenameEntry}
                         onLoadChildren={onLoadChildren}
                       />
-                    ) : (
-                      <div className="nav-empty">空文件夹</div>
-                    )}
+                                        ) : null}
                   </div>
                 )}
               </>

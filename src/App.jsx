@@ -217,13 +217,22 @@ export default function App() {
   }, []);
 
   // ── Lazy-load children for a node (TopBar L1 hover + NavMenu expand) ──
+  // Always preloads one extra level for subdirectories so empty folders
+  // never show an expand chevron.
   const loadChildrenForNode = useCallback(async (node) => {
     if (node.kind !== 'directory' || node.children !== null) return;
     try {
       const children = await loadChildren(node);
+      const preloaded = await Promise.all(children.map(async (ch) => {
+        if (ch.kind === 'directory') {
+          const sub = await loadChildren(ch).catch(() => []);
+          return { ...ch, children: sub };
+        }
+        return ch;
+      }));
       setFileTree(prev => {
-        if (!findNodeByPath(prev, node.path)) return prev; // stale, tree replaced
-        return setChildrenInTree(prev, node.path, children);
+        if (!findNodeByPath(prev, node.path)) return prev;
+        return setChildrenInTree(prev, node.path, preloaded);
       });
     } catch (err) {
       console.error('Failed to load children:', err);
@@ -366,16 +375,9 @@ export default function App() {
   const handleLevel2Hover = useCallback(async (folderNode) => {
     setSidebarFolderPath(folderNode.path);
     sidebarFolderRef.current = folderNode.path;
-    if (folderNode.children === null) {
-      try {
-        const children = await loadChildren(folderNode);
-        setFileTree(prev => setChildrenInTree(prev, folderNode.path, children));
-      } catch (err) {
-        console.error('Failed to load L2 children:', err);
-        setFileTree(prev => setChildrenInTree(prev, folderNode.path, []));
-      }
-    }
-  }, []);
+    await loadChildrenForNode(folderNode);
+  }, [loadChildrenForNode]);
+
 
   // ── Sidebar resize (delta-based, no ref needed) ──────────
   const onSidebarResizeStart = useCallback((e) => {
