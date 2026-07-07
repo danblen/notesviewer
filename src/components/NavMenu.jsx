@@ -162,20 +162,23 @@ export default function NavMenu({
   const cancelCreate = useCallback(() => setCreating(null), []);
 
   // ── Auto-focus + select on inline inputs ─────────────────
+  // Only re-run when the *target item* changes (renaming.id or
+  // creating.dirId), NOT on every keystroke (renaming.value change
+  // would re-trigger and steal focus mid-typing).
   useEffect(() => {
     if (renaming && renameInputRef.current) {
-      renameInputRef.current.focus();
+      //.focus() is handled by the autoFocus prop on mount;
+      // this effect only needs to set the initial selection range.
       const dot = renaming.value.lastIndexOf('.');
       renameInputRef.current.setSelectionRange(0, dot > 0 ? dot : renaming.value.length);
     }
-  }, [renaming]);
+  }, [renaming?.id]);
 
   useEffect(() => {
     if (creating && createInputRef.current) {
-      createInputRef.current.focus();
       createInputRef.current.select();
     }
-  }, [creating]);
+  }, [creating?.dirId]);
 
   // ── Empty state ──────────────────────────────────────────
   if (!items || items.length === 0) {
@@ -209,6 +212,7 @@ export default function NavMenu({
   const renameInput = renaming ? (
     <input
       ref={renameInputRef}
+      autoFocus
       className="nav-rename-input"
       value={renaming.value}
       onChange={(e) => setRenaming(prev => prev ? { ...prev, value: e.target.value } : prev)}
@@ -261,6 +265,7 @@ export default function NavMenu({
                         </span>
                         <input
                           ref={createInputRef}
+                          autoFocus
                           className="nav-rename-input"
                           value={creating.value}
                           onChange={(e) => setCreating(prev => prev ? { ...prev, value: e.target.value } : prev)}
