@@ -14,6 +14,13 @@ import { cloneRepo, pickFolder, getLastPath, saveLastPath, checkHealth, parseErr
  * re-parse the accumulated log for friendly messages.
  */
 export default function CloneModal({ onClose }) {
+
+  const extractRepoName = (input) => {
+    const s = input.trim();
+    if (!s) return null;
+    const m = s.match(/(?:github\.com[/:][\w.-]+\/|^)([\w.-]+?)(?:\.git)?$/);
+    return m ? m[1] : null;
+  };
   const [repo, setRepo] = useState('');
   const [dest, setDest] = useState(() => getLastPath() || '');
   const [status, setStatus] = useState('idle'); // idle | cloning | done | error
@@ -45,8 +52,12 @@ export default function CloneModal({ onClose }) {
 
   const handlePickFolder = useCallback(async () => {
     const result = await pickFolder();
-    if (result.path) setDest(result.path);
-  }, []);
+    if (result.path) {
+      const repoName = extractRepoName(repo);
+      const targetPath = repoName ? `${result.path}/${repoName}` : result.path;
+      setDest(targetPath);
+    }
+  }, [repo]);
 
   const handleClone = useCallback(() => {
     if (!repo.trim() || !dest.trim() || status === 'cloning') return;

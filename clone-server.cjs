@@ -113,17 +113,27 @@ function handleClone(req, res, url) {
     return;
   }
 
-  // Basic dest validation — must be an absolute-ish path and parent must exist
-  const destResolved = path.resolve(dest);
-  const parent = path.dirname(destResolved);
+  // Basic dest validation — resolve, handle ~, and ensure parent exists
+  let destExpanded = path.resolve(dest);
+  // Expand ~ if present (path.resolve does not handle ~)
+  if (dest.startsWith('~')) {
+    destExpanded = path.join(os.homedir(), dest.slice(1));
+    destExpanded = path.resolve(destExpanded);
+  }
+  const parent = path.dirname(destExpanded);
   try {
     fs.accessSync(parent, fs.constants.W_OK);
   } catch {
-    sendJSON(res, 400, {
-      error: '目标路径的父目录不存在或不可写',
-      suggestion: '请选择一个有效的目录',
-    });
-    return;
+    // Try to create parent directory chain if it doesn't exist
+    try {
+      fs.mkdirSync(parent, { recursive: true });
+    } catch (mkdirErr) {
+      sendJSON(res, 400, {
+        error: '目标路径的父目录不存在或不可写',
+        suggestion: '请选择一个有效的目录',
+      });
+      return;
+    }
   }
 
   // SSE headers
@@ -138,13 +148,13 @@ function handleClone(req, res, url) {
     res.write(`data: ${JSON.stringify(obj)}\n\n`);
   };
 
-  send({ type: 'progress', text: `正在克隆 ${repo} → ${destResolved}\n` });
+  send({ type: 'progress', text: `正在克隆 ${repo} → ${destExpanded}\n` });
 
   // Buffer stderr so we can parse a friendly error on failure
   let stderrBuf = '';
 
   const child = execFile('git', [
-    'clone', '--progress', repo, destResolved,
+    'clone', '--progress', repo, destExpanded,
   ], {
     maxBuffer: 10 * 1024 * 1024,
     timeout: 10 * 60 * 1000, // 10 min hard cap
