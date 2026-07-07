@@ -251,3 +251,14 @@ export function FileTypeIcon({ name, size = 16 }) {
   if (base === 'dockerfile' || base === 'makefile') return <CodeIcon size={size} />;
   return <TextIcon size={size} />;
 }
+
+/** Layout toggle — sidebar panel icon */
+export function LayoutIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.1" fill="currentColor" fillOpacity="0.05" />
+      <rect x="1.5" y="1.5" width="5" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.1" fill="currentColor" fillOpacity="0.08" />
+      <path d="M6.5 3v10" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}

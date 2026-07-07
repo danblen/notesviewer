@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { FolderIcon, FileTypeIcon, ChevronRight } from './Icons';
+import LayoutToggle from './LayoutToggle';
 import SpaceSelector from './SpaceSelector';
 
 const DROPDOWN_W = 220;
@@ -14,6 +15,7 @@ export default function TopBar({
   recentSpaces, activeSpaceId,
   onSelectDirectory, onFileHover, onFileLeave, onLevel2Hover,
   onSwitchSpace, onDeleteSpace, onCloneGithub, onLoadChildren,
+  layoutMode, onToggleLayout,
 }) {
   const [hoveredL1Id, setHoveredL1Id] = useState(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
@@ -76,6 +78,7 @@ export default function TopBar({
   // ── Render ──
   return (
     <header className="topbar">
+      <LayoutToggle layoutMode={layoutMode} onToggleLayout={onToggleLayout} />
       <SpaceSelector
         rootName={rootName}
         loading={loading}

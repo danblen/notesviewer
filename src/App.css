@@ -81,6 +81,52 @@ body {
 
 /* (directory opener now lives inside the spaces dropdown — see .space-action) */
 
+/*
+── Layout toggle button (topbar far left) ──────────────── */
+.layout-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+  padding: 0;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.layout-toggle-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+/* ── Left-only sidebar header ────────────────────────────── */
+.sidebar-left-header {
+  display: flex;
+  align-items: center;
+  height: var(--topbar-height);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 100;
+}
+.sidebar-space-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-space-wrap .spaces-switcher {
+  margin-left: 0;
+  width: 100%;
+}
+
 /* Level-1 items (right side of topbar, left-aligned within section) */
 .topbar-right {
   display: flex;

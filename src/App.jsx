@@ -1,3 +1,4 @@
+import { LayoutIcon } from './components/Icons';
 import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
@@ -27,6 +28,7 @@ import {
 
 const LS_SIDEBAR_W = 'nv_sidebar_width';
 const LS_CONTENT_W = 'nv_content_width';
+const LS_LAYOUT = 'nv_layout';
 const SIDEBAR_MIN = 180, SIDEBAR_MAX = 520;
 const CONTENT_MIN = 400, CONTENT_MAX = 1800;
 
@@ -34,6 +36,11 @@ function loadNum(key, fallback, min, max) {
   const v = Number(localStorage.getItem(key));
   if (!v || isNaN(v)) return fallback;
   return Math.min(max, Math.max(min, v));
+}
+
+function loadLayout() {
+  const v = localStorage.getItem(LS_LAYOUT);
+  return v === 'left-only' ? 'left-only' : 'top-left';
 }
 
 export default function App() {
@@ -61,6 +68,15 @@ export default function App() {
     loadNum(LS_SIDEBAR_W, 260, SIDEBAR_MIN, SIDEBAR_MAX));
   const [contentMaxWidth, setContentMaxWidth] = useState(() =>
     loadNum(LS_CONTENT_W, 860, CONTENT_MIN, CONTENT_MAX));
+  const [layoutMode, setLayoutMode] = useState(loadLayout);
+
+  const toggleLayout = useCallback(() => {
+    setLayoutMode(prev => {
+      const next = prev === 'top-left' ? 'left-only' : 'top-left';
+      localStorage.setItem(LS_LAYOUT, next);
+      return next;
+    });
+  }, []);
 
   const fileOpenTimerRef = useRef(null);
   const currentFileIdRef = useRef(null);
@@ -439,7 +455,8 @@ export default function App() {
   // ── Render ───────────────────────────────────────────────
   return (
     <div className="app">
-      <TopBar
+      {layoutMode === 'top-left' && (
+        <TopBar
         rootName={rootName}
         level1Items={fileTree}
         loading={loading}
@@ -453,14 +470,27 @@ export default function App() {
         onSwitchSpace={handleSwitchSpace}
         onDeleteSpace={handleDeleteSpace}
         onCloneGithub={openClone}
-        onLoadChildren={loadChildrenForNode}
-      />
+          onLoadChildren={loadChildrenForNode}
+          layoutMode={layoutMode}
+          onToggleLayout={toggleLayout}
+        />
+      )}
       <div className="app-body">
         <Sidebar
-          items={sidebarItems}
-          folder={sidebarFolder}
+          items={layoutMode === 'left-only' ? fileTree : sidebarItems}
+          folder={layoutMode === 'left-only' ? null : sidebarFolder}
           width={sidebarWidth}
           currentFileId={currentFileId}
+          layoutMode={layoutMode}
+          onToggleLayout={toggleLayout}
+          rootName={rootName}
+          loading={loading}
+          recentSpaces={recentSpaces}
+          activeSpaceId={activeSpaceId}
+          onSelectDirectory={handleSelectDirectory}
+          onSwitchSpace={handleSwitchSpace}
+          onDeleteSpace={handleDeleteSpace}
+          onCloneGithub={openClone}
           onFileHover={handleFileHover}
           onFileLeave={handleFileLeave}
           onDeleteEntry={handleDeleteEntry}

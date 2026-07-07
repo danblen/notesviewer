@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import NavMenu from './NavMenu';
+import SpaceSelector from './SpaceSelector';
+import LayoutToggle from './LayoutToggle';
 import {
   MoreIcon, RenameIcon, NewFolderIcon, TrashIcon,
   FolderIcon, FileTypeIcon, OpenWorkspaceIcon,
@@ -21,6 +23,9 @@ function SidebarInner({
   items, onFileHover, onFileLeave, currentFileId, width, folder,
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
   onOpenAsWorkspace,
+  layoutMode, onToggleLayout,
+  rootName, loading, recentSpaces, activeSpaceId,
+  onSelectDirectory, onSwitchSpace, onDeleteSpace, onCloneGithub,
 }) {
   // More-menu (⋯) state
   const [moreMenu, setMoreMenu] = useState(null);      // { pos }
@@ -175,9 +180,31 @@ function SidebarInner({
     />
   ) : null;
 
+  const isLeftOnly = layoutMode === 'left-only';
+
   return (
     <aside className="sidebar" style={{ width }}>
-      {folder && (
+      {/* Left-only mode: header with layout toggle + space switcher */}
+      {isLeftOnly && (
+        <div className="sidebar-left-header">
+          <LayoutToggle layoutMode={layoutMode} onToggleLayout={onToggleLayout} />
+          <div className="sidebar-space-wrap">
+            <SpaceSelector
+              rootName={rootName}
+              loading={loading}
+              recentSpaces={recentSpaces}
+              activeSpaceId={activeSpaceId}
+              onSelectDirectory={onSelectDirectory}
+              onSwitchSpace={onSwitchSpace}
+              onDeleteSpace={onDeleteSpace}
+              onCloneGithub={onCloneGithub}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Top-left mode: folder header */}
+      {!isLeftOnly && folder && (
         <>
           <div className="sidebar-header">
             <span className="nav-item-icon"><FolderIcon size={14} /></span>
@@ -223,22 +250,26 @@ function SidebarInner({
         </>
       )}
 
-      {folder && items === null ? (
-        <div className="sidebar-empty">加载中…</div>
-      ) : (
-        <NavMenu
-          items={items}
-          onFileHover={onFileHover}
-          onFileLeave={onFileLeave}
-          currentFileId={currentFileId}
-          variant="sidebar"
-          onDeleteEntry={onDeleteEntry}
-          onCreateFile={onCreateFile}
-          onCreateFolder={onCreateFolder}
-          onRenameEntry={onRenameEntry}
-          onLoadChildren={onLoadChildren}
-          onOpenAsWorkspace={onOpenAsWorkspace}
-        />
+      {/* Left-only: always show NavMenu (show empty hint when no items) */}
+      {/* Top-left: show NavMenu only when folder is selected */}
+      {(isLeftOnly || folder) && (
+        items === null ? (
+          <div className="sidebar-empty">加载中…</div>
+        ) : (
+          <NavMenu
+            items={items}
+            onFileHover={onFileHover}
+            onFileLeave={onFileLeave}
+            currentFileId={currentFileId}
+            variant="sidebar"
+            onDeleteEntry={onDeleteEntry}
+            onCreateFile={onCreateFile}
+            onCreateFolder={onCreateFolder}
+            onRenameEntry={onRenameEntry}
+            onLoadChildren={onLoadChildren}
+            onOpenAsWorkspace={onOpenAsWorkspace}
+          />
+        )
       )}
 
       {/* ⋯ Action dropdown — position:fixed, never clipped by sidebar overflow */}
