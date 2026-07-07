@@ -229,10 +229,6 @@ export function isFsaSupported() {
 export async function selectAndBuildTree() {
   if (isFsaSupported()) {
     const handle = await window.showDirectoryPicker();
-    const hasPermission = await verifyPermission(handle);
-    if (!hasPermission) {
-      throw new Error('未获得目录读取权限');
-    }
     const tree = await buildTreeLevel(handle);
     return { handle, tree, name: handle.name };
   }

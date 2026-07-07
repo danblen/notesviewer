@@ -32,7 +32,7 @@ function NavMenuInner({
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
 }) {
   const [expandedItemId, setExpandedItemId] = useState(null);
-  const expandedItem = expandedItemId ? items.find(i => i.id === expandedItemId) : null;
+  const expandedItem = (expandedItemId && items) ? items.find(i => i.id === expandedItemId) : null;
   const expandLoadingRef = useRef(new Set());
   const toggleTimerRef = useRef(null);
 
@@ -136,7 +136,7 @@ function NavMenuInner({
   const commitRename = useCallback(async () => {
     if (!renaming) return;
     const { id, value } = renaming;
-    const item = items.find(i => i.id === id);
+    const item = items?.find(i => i.id === id);
     setRenaming(null);
     if (!item || !value.trim() || value.trim() === item.name) return;
     try {
@@ -152,7 +152,7 @@ function NavMenuInner({
   const commitCreate = useCallback(async () => {
     if (!creating) return;
     const { dirId, type, value } = creating;
-    const dir = items.find(i => i.id === dirId);
+    const dir = items?.find(i => i.id === dirId);
     setCreating(null);
     if (!dir || !value.trim()) return;
     try {
