@@ -513,7 +513,7 @@ export default function App() {
           onDirtyChange={handleDirtyChange}
         />
       </div>
-      {showClone && <CloneModal onClose={closeClone} />}
+      {showClone && <CloneModal onClose={closeClone} onOpenAsSpace={handleSelectDirectory} />}
     </div>
   );
 }

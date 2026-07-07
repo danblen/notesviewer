@@ -1,15 +1,20 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ExitIcon } from './Icons';
-import { cloneRepo, pickFolder, saveLastPath, checkHealth, parseErrorFromLog, searchRepos } from '../utils/clone';
+import { cloneRepo, pickFolder, saveLastPath, checkHealth, searchRepos } from '../utils/clone';
 
 const DEFAULT_DEST = '/Volumes/z/codemy';
+let _taskId = 0;
 
-export default function CloneModal({ onClose }) {
+function taskIcon(status) {
+  if (status === 'cloning') return '⏳';
+  if (status === 'done') return '✓';
+  if (status === 'error') return '✗';
+  return '';
+}
+
+export default function CloneModal({ onClose, onOpenAsSpace }) {
   const [repo, setRepo] = useState('');
   const [dest, setDest] = useState(DEFAULT_DEST);
-  const [status, setStatus] = useState('idle');
-  const [progress, setProgress] = useState('');
-  const [error, setError] = useState(null);
   const [health, setHealth] = useState(null);
 
   // Search dropdown
@@ -18,29 +23,24 @@ export default function CloneModal({ onClose }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(-1);
 
-  const cancelRef = useRef(null);
-  const logRef = useRef('');
-  const progressRef = useRef(null);
+  // Multi-clone tasks
+  const [tasks, setTasks] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+
+  // Dragging
+  const [drag, setDrag] = useState({ x: 0, y: 0 });
+  const dragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const modalRef = useRef(null);
+
   const repoInputRef = useRef(null);
   const dropdownRef = useRef(null);
   const searchTimerRef = useRef(null);
 
-  // Check server health on mount
+  // Health
   useEffect(() => { checkHealth().then(setHealth); }, []);
 
-  // Auto-scroll progress
-  useEffect(() => {
-    if (progressRef.current) progressRef.current.scrollTop = progressRef.current.scrollHeight;
-  }, [progress]);
-
-  // Escape to close
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && status !== 'cloning') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, status]);
-
-  // Debounced GitHub search
+  // Debounced search
   useEffect(() => {
     const q = repo.trim();
     if (!q || q.length < 2) { setResults([]); setShowDropdown(false); setSearching(false); return; }
@@ -59,8 +59,8 @@ export default function CloneModal({ onClose }) {
   // Click outside closes dropdown
   useEffect(() => {
     const onClick = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)
-        && repoInputRef.current && !repoInputRef.current.contains(e.target)) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target) &&
+          repoInputRef.current && !repoInputRef.current.contains(e.target)) {
         setShowDropdown(false);
       }
     };
@@ -68,54 +68,97 @@ export default function CloneModal({ onClose }) {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
-  const repoName = (item) => (item.full_name || item).split('/')[1] || '';
+  // Escape key
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') { setShowDropdown(false); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const repoName = (s) => {
+    const name = (s || '').includes('/') ? s.split('/').pop() : '';
+    return name.replace(/\.git$/, '');
+  };
 
   const selectRepo = useCallback((item) => {
     setRepo(item.full_name);
     setShowDropdown(false);
-    setDest(`${DEFAULT_DEST}/${repoName(item)}`);
+    setDest(`${DEFAULT_DEST}/${repoName(item.full_name)}`);
   }, []);
 
   const handlePickFolder = useCallback(async () => {
     const result = await pickFolder();
     if (result.path) {
-      const name = repo.includes('/') ? repo.split('/')[1] : '';
+      const name = repoName(repo);
       setDest(name ? `${result.path}/${name}` : result.path);
     }
   }, [repo]);
 
-  const handleClone = useCallback(() => {
-    if (!repo.trim() || !dest.trim() || status === 'cloning') return;
-    const name = (repo.includes('/') ? repo.split('/').pop() : '').replace(/\.git$/, '');
-    const cloneDest = name && !dest.endsWith('/' + name) ? `${dest.replace(/\/$/, '')}/${name}` : dest;
-    setStatus('cloning');
-    setProgress('');
-    setError(null);
-    logRef.current = '';
-    cancelRef.current = cloneRepo(repo.trim(), cloneDest, {
-      onProgress: (t) => { logRef.current += t; setProgress((p) => p + t); },
-      onDone: (path) => {
-        setStatus('done');
-        setProgress((p) => p + `\n✓ ${path}\n`);
-        saveLastPath(path);
-      },
-      onError: (err) => { setStatus('error'); setError(parseErrorFromLog(logRef.current) || err); },
-    });
-  }, [repo, dest, status]);
+  const getCloneDest = useCallback(() => {
+    const name = repoName(repo);
+    if (!name) return dest;
+    if (dest.endsWith('/' + name)) return dest;
+    return `${dest.replace(/\/$/, '')}/${name}`;
+  }, [repo, dest]);
 
-  const handleCancel = useCallback(() => {
-    if (cancelRef.current) cancelRef.current();
-    setStatus('idle'); setProgress('');
+  // ── Clone as task ──
+  const handleClone = useCallback(() => {
+    if (!repo.trim() || !getCloneDest()) return;
+    const cloneDest = getCloneDest();
+    const id = `t${++_taskId}`;
+    const name = repoName(repo) || repo.trim();
+
+    const task = { id, repo: repo.trim(), name, dest: cloneDest, status: 'cloning', progress: '', error: null };
+    setTasks((prev) => [...prev, task]);
+    setActiveId(id);
+
+    const cancelFn = cloneRepo(repo.trim(), cloneDest, {
+      onProgress: (t) => {
+        setTasks((prev) => prev.map((tk) => tk.id === id ? { ...tk, progress: tk.progress + t } : tk));
+      },
+      onDone: (path) => {
+        setTasks((prev) => prev.map((tk) => tk.id === id ? { ...tk, status: 'done', progress: tk.progress + `✓ ${path}\n` } : tk));
+        saveLastPath(cloneDest);
+      },
+      onError: (err) => {
+        setTasks((prev) => prev.map((tk) => tk.id === id ? { ...tk, status: 'error', error: err } : tk));
+      },
+    });
+    setTasks((prev) => prev.map((tk) => tk.id === id ? { ...tk, cancelFn } : tk));
+  }, [repo, getCloneDest]);
+
+  const cancelTask = useCallback((id) => {
+    setTasks((prev) => {
+      const t = prev.find((tk) => tk.id === id);
+      if (t && t.cancelFn) t.cancelFn();
+      return prev.map((tk) => tk.id === id ? { ...tk, status: 'idle' } : tk);
+    });
   }, []);
 
-  const handleClose = useCallback(() => {
-    if (status === 'cloning') handleCancel();
-    onClose();
-  }, [status, onClose, handleCancel]);
+  const activeTask = tasks.find((t) => t.id === activeId);
 
-  const canClone = repo.trim() && dest.trim() && status !== 'cloning';
-  const showDestHint = dest.trim() === DEFAULT_DEST || dest.trim().startsWith(DEFAULT_DEST + '/');
+  // ── Dragging ──
+  const onDragStart = useCallback((e) => {
+    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+    dragging.current = true;
+    dragStart.current = { x: e.clientX - drag.x, y: e.clientY - drag.y };
+    document.body.style.userSelect = 'none';
+  }, [drag]);
 
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging.current) return;
+      setDrag({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y });
+    };
+    const onUp = () => { dragging.current = false; document.body.style.userSelect = ''; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  const canClone = repo.trim() && getCloneDest();
+
+  // ── Keyboard: repo input ──
   const onRepoKeyDown = useCallback((e) => {
     if (e.key === 'Escape') { setShowDropdown(false); return; }
     if (showDropdown && results.length) {
@@ -126,25 +169,28 @@ export default function CloneModal({ onClose }) {
     if (e.key === 'Enter' && canClone) handleClone();
   }, [showDropdown, results, highlightIdx, canClone, handleClone, selectRepo]);
 
+  const showDestHint = dest.trim() === DEFAULT_DEST || dest.trim().startsWith(DEFAULT_DEST + '/');
+
   return (
-    <div className="clone-overlay" onClick={handleClose}>
-      <div className="clone-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="clone-header">
+    <div className="clone-overlay">
+      <div ref={modalRef} className="clone-modal" style={{ transform: `translate(${drag.x}px, ${drag.y}px)` }}>
+        {/* Draggable header */}
+        <div className="clone-header" onMouseDown={onDragStart}>
           <span className="clone-title">克隆 GitHub 项目</span>
-          <button className="clone-close" onClick={handleClose}><ExitIcon size={14} /></button>
+          <button className="clone-close" onClick={onClose}><ExitIcon size={14} /></button>
         </div>
 
         {health && !health.ok && <div className="clone-health-warn">{health.error || '克隆服务未就绪'}</div>}
 
         <div className="clone-body">
+          {/* Repo input */}
           <div className="clone-field">
             <span className="clone-label">仓库</span>
             <div className="clone-search-wrap">
               <input ref={repoInputRef} className="clone-input clone-input-lg" type="text"
                 value={repo} onChange={(e) => setRepo(e.target.value)} onKeyDown={onRepoKeyDown}
                 onFocus={() => { if (results.length) setShowDropdown(true); }}
-                placeholder="搜索 GitHub 仓库…" autoFocus disabled={status === 'cloning'}
-                spellCheck={false} autoComplete="off" />
+                placeholder="搜索 GitHub 仓库…" autoFocus spellCheck={false} autoComplete="off" />
               {searching && <span className="clone-search-spinner" />}
               {showDropdown && (
                 <div ref={dropdownRef} className="clone-search-dropdown">
@@ -165,44 +211,63 @@ export default function CloneModal({ onClose }) {
             </div>
           </div>
 
+          {/* Dest */}
           <div className="clone-field">
             <span className="clone-label">保存至</span>
             <div className="clone-path-row">
               <input className="clone-input clone-input-sm" type="text"
                 value={dest} onChange={(e) => setDest(e.target.value)}
-                placeholder="/Volumes/z/codemy" disabled={status === 'cloning'} spellCheck={false} />
-              <button className="clone-pick-btn" onClick={handlePickFolder} disabled={status === 'cloning'}>浏览…</button>
+                placeholder="/Volumes/z/codemy" spellCheck={false} />
+              <button className="clone-pick-btn" onClick={handlePickFolder}>浏览…</button>
             </div>
             {showDestHint && <span className="clone-dest-hint">默认存储位置，若不存在将自动创建</span>}
           </div>
 
-          {(status === 'cloning' || status === 'done' || status === 'error') && (
+          {/* Task list */}
+          {tasks.length > 0 && (
+            <div className="clone-task-list">
+              {tasks.map((t) => (
+                <div key={t.id}
+                  className={`clone-task-item ${t.id === activeId ? 'active' : ''} ${t.status}`}
+                  onClick={() => setActiveId(t.id)}>
+                  <span className="clone-task-status">{taskIcon(t.status)}</span>
+                  <span className="clone-task-name">{t.name}</span>
+                  <span className="clone-task-path" title={t.dest}>{t.status === 'cloning' ? '克隆中…' : t.dest}</span>
+                  <span className="clone-task-actions">
+                    {t.status === 'cloning' && (
+                      <button className="clone-task-cancel" onClick={(e) => { e.stopPropagation(); cancelTask(t.id); }}>取消</button>
+                    )}
+                    {t.status === 'done' && onOpenAsSpace && (
+                      <button className="clone-task-open" onClick={(e) => { e.stopPropagation(); onOpenAsSpace(); }}
+                        title="打开为笔记空间">打开</button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Active task detail */}
+          {activeTask && (activeTask.status === 'cloning' || activeTask.status === 'done' || activeTask.status === 'error') && (
             <div className="clone-progress-wrap">
-              <div ref={progressRef} className={`clone-progress ${status === 'error' ? 'has-error' : ''} ${status === 'done' ? 'has-done' : ''}`}>
-                {progress}
+              <div className={`clone-progress ${activeTask.status === 'error' ? 'has-error' : ''} ${activeTask.status === 'done' ? 'has-done' : ''}`}>
+                {activeTask.progress || '准备中…'}
               </div>
             </div>
           )}
 
-          {status === 'error' && error && (
+          {activeTask && activeTask.status === 'error' && activeTask.error && (
             <div className="clone-error-box">
-              <div className="clone-error-msg">{error.message}</div>
-              {error.suggestion && <div className="clone-error-suggestion">{error.suggestion}</div>}
+              <div className="clone-error-msg">{activeTask.error.message}</div>
+              {activeTask.error.suggestion && <div className="clone-error-suggestion">{activeTask.error.suggestion}</div>}
             </div>
           )}
-
-          {status === 'done' && <div className="clone-done-box">✓ 克隆成功</div>}
         </div>
 
+        {/* Footer */}
         <div className="clone-footer">
-          {status === 'cloning' ? (
-            <button className="clone-btn cancel" onClick={handleCancel}>取消</button>
-          ) : (
-            <>
-              <button className="clone-btn ghost" onClick={handleClose}>{status === 'done' ? '关闭' : '取消'}</button>
-              <button className="clone-btn primary" onClick={handleClone} disabled={!canClone}>克隆</button>
-            </>
-          )}
+          <button className="clone-btn ghost" onClick={onClose}>关闭</button>
+          <button className="clone-btn primary" onClick={handleClone} disabled={!canClone}>克隆</button>
         </div>
       </div>
     </div>
