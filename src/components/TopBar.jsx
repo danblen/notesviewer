@@ -44,7 +44,7 @@ function TopBarInner({
 
   // Spaces dropdown state
   const [spacesOpen, setSpacesOpen] = useState(false);
-  const [spacesPos, setSpacesPos] = useState({ top: 0, right: 0 });
+  const [spacesPos, setSpacesPos] = useState({ top: 0, left: 0 });
   const spacesCloseTimer = useRef(null);
   const switchTimer = useRef(null);
 
@@ -111,7 +111,7 @@ function TopBarInner({
   const handleSpacesEnter = useCallback((e) => {
     clearTimeout(spacesCloseTimer.current);
     const rect = e.currentTarget.getBoundingClientRect();
-    setSpacesPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setSpacesPos({ top: rect.bottom + 4, left: rect.left });
     setSpacesOpen(true);
   }, []);
 
@@ -217,7 +217,19 @@ function TopBarInner({
   // ── Render ───────────────────────────────────────────────
   return (
     <header className="topbar">
-      {/* Level-1 items (left-aligned) */}
+      {/* Left: notes-spaces switcher */}
+      <div
+        className={`spaces-switcher ${spacesOpen ? 'open' : ''} ${activeSpaceId ? '' : 'no-active'}`}
+        onMouseEnter={handleSpacesEnter}
+        onMouseLeave={handleSpacesLeave}
+        title="切换笔记空间 / 打开目录"
+      >
+        <SpacesIcon size={15} />
+        <span className="spaces-label">{activeSpace?.name || rootName || '笔记空间'}</span>
+        <ChevronRight size={10} className="spaces-chevron" />
+      </div>
+
+      {/* Level-1 items */}
       <nav className="topbar-right">
         {level1Items.map(item => (
           <div
@@ -235,18 +247,6 @@ function TopBarInner({
           </div>
         ))}
       </nav>
-
-      {/* Right: notes-spaces switcher (hover to open) */}
-      <div
-        className={`spaces-switcher ${spacesOpen ? 'open' : ''} ${activeSpaceId ? '' : 'no-active'}`}
-        onMouseEnter={handleSpacesEnter}
-        onMouseLeave={handleSpacesLeave}
-        title="切换笔记空间 / 打开目录"
-      >
-        <SpacesIcon size={15} />
-        <span className="spaces-label">{activeSpace?.name || rootName || '笔记空间'}</span>
-        <ChevronRight size={10} className="spaces-chevron" />
-      </div>
 
       {/* Level-2 dropdown — rendered OUTSIDE .topbar-right to avoid overflow clipping. */}
       {hoveredL1 && hoveredL1.kind === 'directory' && (
@@ -294,7 +294,7 @@ function TopBarInner({
           style={{
             position: 'fixed',
             top: `${spacesPos.top}px`,
-            right: `${spacesPos.right}px`,
+            left: `${spacesPos.left}px`,
           }}
           onMouseEnter={handleSpacesDropdownEnter}
           onMouseLeave={handleSpacesDropdownLeave}
