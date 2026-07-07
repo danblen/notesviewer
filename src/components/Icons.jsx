@@ -195,6 +195,15 @@ export function RenameIcon({ size = 14, className = '' }) {
   );
 }
 
+export function DownloadIcon({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M8 1.5v8M8 9.5L4.5 6M8 9.5L11.5 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M2.5 11.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function NewFolderIcon({ size = 14, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>

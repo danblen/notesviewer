@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import NavMenu from './NavMenu';
 import {
   MoreIcon, RenameIcon, NewFolderIcon, TrashIcon,
@@ -17,7 +17,7 @@ import {
  *   新建文件 / 新建文件夹 / 重命名 / 删除
  * with inline confirmation + inline inputs (no window.confirm/prompt).
  */
-export default function Sidebar({
+function SidebarInner({
   items, onFileHover, onFileLeave, currentFileId, width, folder,
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry,
 }) {
@@ -283,3 +283,6 @@ export default function Sidebar({
     </aside>
   );
 }
+
+const Sidebar = memo(SidebarInner);
+export default Sidebar;

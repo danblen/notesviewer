@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import {
   FolderIcon, FileTypeIcon, ChevronRight,
   MoreIcon, RenameIcon, NewFolderIcon, TrashIcon,
@@ -23,8 +23,11 @@ import {
  *
  * Children are rendered directly below the parent (indented).
  * Expansion persists — does NOT auto-collapse on mouse leave.
+ *
+ * Wrapped in React.memo: props are stable (items by ref, callbacks by
+ * useCallback), so the tree only re-renders when data actually changes.
  */
-export default function NavMenu({
+function NavMenuInner({
   items, onFileHover, onFileLeave, currentFileId, variant = 'sidebar',
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry,
 }) {
@@ -372,3 +375,6 @@ export default function NavMenu({
     </div>
   );
 }
+
+const NavMenu = memo(NavMenuInner);
+export default NavMenu;

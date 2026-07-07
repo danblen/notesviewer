@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import { FolderIcon, FolderOpenIcon, FileTypeIcon, ChevronRight, SpacesIcon, PlusIcon, MoreIcon, TrashIcon } from './Icons';
+import { useState, useRef, useCallback, memo } from 'react';
+import { FolderIcon, FolderOpenIcon, FileTypeIcon, ChevronRight, SpacesIcon, PlusIcon, MoreIcon, TrashIcon, DownloadIcon } from './Icons';
 
 /**
  * TopBar — persistent header.
@@ -19,7 +19,7 @@ import { FolderIcon, FolderOpenIcon, FileTypeIcon, ChevronRight, SpacesIcon, Plu
  *  - L2 folder → updates Sidebar with L3 children
  *  - L2 file   → open file (debounced)
  */
-export default function TopBar({
+function TopBarInner({
   rootName,
   level1Items,
   loading,
@@ -32,6 +32,7 @@ export default function TopBar({
   onLevel2Hover,
   onSwitchSpace,
   onDeleteSpace,
+  onCloneGithub,
 }) {
   const [hoveredL1, setHoveredL1] = useState(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
@@ -195,6 +196,13 @@ export default function TopBar({
     onSelectDirectory();
   }, [loading, onSelectDirectory]);
 
+  // "克隆 GitHub 项目" — click only
+  const handleCloneClick = useCallback(() => {
+    clearTimeout(switchTimer.current);
+    setSpacesOpen(false);
+    onCloneGithub();
+  }, [onCloneGithub]);
+
   // ── Render ───────────────────────────────────────────────
   return (
     <header className="topbar">
@@ -287,6 +295,15 @@ export default function TopBar({
             <span className="space-action-icon"><PlusIcon size={14} /></span>
             <span className="space-action-name">打开目录…</span>
           </div>
+          <div
+            className="space-action"
+            onClick={handleCloneClick}
+            onMouseEnter={() => clearTimeout(switchTimer.current)}
+            title="从 GitHub 克隆项目到本地"
+          >
+            <span className="space-action-icon"><DownloadIcon size={14} /></span>
+            <span className="space-action-name">克隆 GitHub 项目…</span>
+          </div>
           {recentSpaces.length > 0 && <div className="space-divider" />}
           {recentSpaces.map(space => (
             <div
@@ -358,3 +375,6 @@ export default function TopBar({
     </header>
   );
 }
+
+const TopBar = memo(TopBarInner);
+export default TopBar;

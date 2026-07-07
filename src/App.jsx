@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
 import ContentArea from './components/ContentArea';
+import CloneModal from './components/CloneModal';
 import {
   selectAndBuildTree,
   getFileType,
@@ -61,6 +62,11 @@ export default function App() {
   const dirtyRef = useRef(false);
   const handleDirtyChange = useCallback((d) => { dirtyRef.current = d; }, []);
 
+  // Clone GitHub modal
+  const [showClone, setShowClone] = useState(false);
+  const openClone = useCallback(() => setShowClone(true), []);
+  const closeClone = useCallback(() => setShowClone(false), []);
+
   const currentFileId = currentFile?.node?.id || null;
 
   // Persist widths
@@ -81,6 +87,7 @@ export default function App() {
           setRootName(result.name);
           setFileTree(result.tree);
           setActiveSpaceId(tryId);
+          activeSpaceIdRef.current = tryId;
           saveLastSpaceId(tryId);
         }
       }).catch(() => { /* ignore — user will select manually */ });
@@ -99,6 +106,7 @@ export default function App() {
       setFileTree(tree);
       setSidebarItems(null);
       setSidebarFolder(null);
+      sidebarFolderRef.current = null;
       setCurrentFile(null);
       currentFileIdRef.current = null;
 
@@ -108,6 +116,7 @@ export default function App() {
         await saveDirHandle(spaceId, handle);
         setRecentSpaces(prev => addRecentSpace(prev, spaceId, name));
         setActiveSpaceId(spaceId);
+        activeSpaceIdRef.current = spaceId;
         saveLastSpaceId(spaceId);
       }
     } catch (err) {
@@ -120,8 +129,9 @@ export default function App() {
   }, []);
 
   // ── Switch to a previously-saved space (hover-triggered) ──
+  const activeSpaceIdRef = useRef(null);
   const handleSwitchSpace = useCallback(async (spaceId) => {
-    if (spaceId === activeSpaceId) return;
+    if (spaceId === activeSpaceIdRef.current) return;
     // Don't switch while there are unsaved edits (prevents silent data loss)
     if (dirtyRef.current) return;
     setLoading(true);
@@ -132,24 +142,27 @@ export default function App() {
       setFileTree(tree);
       setSidebarItems(null);
       setSidebarFolder(null);
+      sidebarFolderRef.current = null;
       setCurrentFile(null);
       currentFileIdRef.current = null;
       setActiveSpaceId(spaceId);
+      activeSpaceIdRef.current = spaceId;
       saveLastSpaceId(spaceId);
     } catch (err) {
       console.error('Failed to switch space:', err);
       // Remove the stale space from the list + IDB
       setRecentSpaces(prev => removeRecentSpace(prev, spaceId));
       await deleteDirHandle(spaceId).catch(() => {});
-      if (activeSpaceId === spaceId) {
+      if (activeSpaceIdRef.current === spaceId) {
         setActiveSpaceId(null);
+        activeSpaceIdRef.current = null;
         saveLastSpaceId(null);
       }
       alert(`无法切换到该笔记空间：\n${err.message}`);
     } finally {
       setLoading(false);
     }
-  }, [activeSpaceId]);
+  }, []);
 
   // ── Open file ────────────────────────────────────────────
   const openFile = useCallback((fileNode) => {
@@ -181,25 +194,30 @@ export default function App() {
   }, []);
 
   // ── Rebuild tree + recover sidebar after file operations ─
+  // Use ref for sidebarFolder so refreshTree (and all callbacks that depend
+  // on it) keep stable identities — essential for React.memo on children.
+  const sidebarFolderRef = useRef(null);
   const refreshTree = useCallback(async () => {
     const handle = rootHandleRef.current;
     if (!handle) return;
     const newTree = await rebuildTree(handle);
     setFileTree(newTree);
     // Recover sidebar folder by path
-    const folderPath = sidebarFolder?.path ?? null;
+    const folderPath = sidebarFolderRef.current?.path ?? null;
     if (folderPath) {
       const folder = findNodeByPath(newTree, folderPath);
       if (folder) {
         setSidebarItems(folder.children || []);
         setSidebarFolder(folder);
+        sidebarFolderRef.current = folder;
       } else {
         setSidebarItems(null);
         setSidebarFolder(null);
+        sidebarFolderRef.current = null;
       }
     }
     return newTree;
-  }, [sidebarFolder]);
+  }, []);
 
   // ── Delete a file or directory from disk ────────────────
   // (confirmation is handled in the NavMenu UI — no window.confirm)
@@ -310,10 +328,13 @@ export default function App() {
 
   // ── Delete a workspace from the spaces dropdown ──────────
   // (confirmation is handled in the TopBar UI — no window.confirm)
+  const recentSpacesRef = useRef([]);
+  recentSpacesRef.current = recentSpaces;
   const handleDeleteSpace = useCallback(async (spaceId) => {
-    const space = recentSpaces.find(s => s.id === spaceId);
+    const spaces = recentSpacesRef.current;
+    const space = spaces.find(s => s.id === spaceId);
     if (!space) return;
-    const isActive = spaceId === activeSpaceId;
+    const isActive = spaceId === activeSpaceIdRef.current;
     // Remove from IDB
     await deleteDirHandle(spaceId).catch(() => {});
     // Remove from recent list
@@ -325,17 +346,20 @@ export default function App() {
       setFileTree([]);
       setSidebarItems(null);
       setSidebarFolder(null);
+      sidebarFolderRef.current = null;
       setCurrentFile(null);
       currentFileIdRef.current = null;
       setActiveSpaceId(null);
+      activeSpaceIdRef.current = null;
       saveLastSpaceId(null);
     }
-  }, [recentSpaces, activeSpaceId]);
+  }, []);
 
   // ── L2 folder hover → update sidebar ─────────────────────
   const handleLevel2Hover = useCallback((folderNode) => {
     setSidebarItems(folderNode.children || []);
     setSidebarFolder(folderNode);
+    sidebarFolderRef.current = folderNode;
   }, []);
 
   // ── Sidebar resize (delta-based, no ref needed) ──────────
@@ -375,6 +399,7 @@ export default function App() {
         onLevel2Hover={handleLevel2Hover}
         onSwitchSpace={handleSwitchSpace}
         onDeleteSpace={handleDeleteSpace}
+        onCloneGithub={openClone}
       />
       <div className="app-body">
         <Sidebar
@@ -401,6 +426,7 @@ export default function App() {
           onDirtyChange={handleDirtyChange}
         />
       </div>
+      {showClone && <CloneModal onClose={closeClone} />}
     </div>
   );
 }

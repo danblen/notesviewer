@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -326,7 +326,8 @@ function MarkdownViewer({ file }) {
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
 
-  return (
+  // Memoize markdown parsing — rehype-highlight is expensive
+  const rendered = useMemo(() => (
     <div className="markdown-content">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
@@ -335,7 +336,9 @@ function MarkdownViewer({ file }) {
         {content}
       </ReactMarkdown>
     </div>
-  );
+  ), [content]);
+
+  return rendered;
 }
 
 // ── PDF ───────────────────────────────────────────────────
@@ -407,11 +410,13 @@ function CodeViewer({ file }) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [highlightedHtml, setHighlightedHtml] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setHighlightedHtml(null);
     getFileObject(file.node).then(async (f) => {
       const text = await f.text();
       if (!cancelled) {
@@ -428,30 +433,36 @@ function CodeViewer({ file }) {
     return () => { cancelled = true; };
   }, [file.node]);
 
+  // Deferred highlighting — runs after paint so UI stays responsive
+  useEffect(() => {
+    if (loading || error || !content) return;
+    const lang = getCodeLanguage(file.name);
+    const supported = lang !== 'plaintext' && hljs.getLanguage(lang);
+    const tooLarge = content.length > 500_000;
+    if (supported && !tooLarge) {
+      // Defer to next frame to avoid blocking the initial paint
+      const raf = requestAnimationFrame(() => {
+        try {
+          const html = hljs.highlight(content, { language: lang }).value;
+          setHighlightedHtml(html);
+        } catch { /* ignore */ }
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [content, loading, error, file.name]);
+
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
 
   const lang = getCodeLanguage(file.name);
-  const supported = lang !== 'plaintext' && hljs.getLanguage(lang);
-  // Guard against huge files slowing down highlighting
-  const tooLarge = content.length > 500_000;
-
-  let html = null;
-  if (supported && !tooLarge) {
-    try {
-      html = hljs.highlight(content, { language: lang }).value;
-    } catch {
-      html = null;
-    }
-  }
 
   return (
     <div className="code-viewer">
       <pre className="code-pre">
-        {html ? (
+        {highlightedHtml ? (
           <code
             className={`hljs language-${lang}`}
-            dangerouslySetInnerHTML={{ __html: html }}
+            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
           />
         ) : (
           <code>{content}</code>
