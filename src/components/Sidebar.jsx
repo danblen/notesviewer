@@ -19,7 +19,7 @@ import {
  */
 function SidebarInner({
   items, onFileHover, onFileLeave, currentFileId, width, folder,
-  onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry,
+  onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
 }) {
   // More-menu (⋯) state
   const [moreMenu, setMoreMenu] = useState(null);      // { pos }
@@ -215,17 +215,22 @@ function SidebarInner({
         </>
       )}
 
-      <NavMenu
-        items={items}
-        onFileHover={onFileHover}
-        onFileLeave={onFileLeave}
-        currentFileId={currentFileId}
-        variant="sidebar"
-        onDeleteEntry={onDeleteEntry}
-        onCreateFile={onCreateFile}
-        onCreateFolder={onCreateFolder}
-        onRenameEntry={onRenameEntry}
-      />
+      {folder && items === null ? (
+        <div className="sidebar-empty">加载中…</div>
+      ) : (
+        <NavMenu
+          items={items}
+          onFileHover={onFileHover}
+          onFileLeave={onFileLeave}
+          currentFileId={currentFileId}
+          variant="sidebar"
+          onDeleteEntry={onDeleteEntry}
+          onCreateFile={onCreateFile}
+          onCreateFolder={onCreateFolder}
+          onRenameEntry={onRenameEntry}
+          onLoadChildren={onLoadChildren}
+        />
+      )}
 
       {/* ⋯ Action dropdown — position:fixed, never clipped by sidebar overflow */}
       {moreMenu && folder && (

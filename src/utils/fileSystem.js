@@ -122,27 +122,48 @@ async function verifyPermission(dirHandle) {
   return false;
 }
 
-// ── FSA API: recursive tree builder ──────────────────────────────
+// ── FSA API: single-level tree builder (lazy) ───────────────────
+// Builds ONE level deep — directories get children=null (loaded on demand).
+// Yields to the event loop every 200 entries to avoid blocking UI.
 
-async function buildTreeFSA(dirHandle, basePath = '') {
+async function buildTreeLevel(dirHandle, basePath = '') {
   const children = [];
+  let count = 0;
   for await (const entry of dirHandle.values()) {
     const path = basePath ? `${basePath}/${entry.name}` : entry.name;
     const node = makeNode(entry.name, entry.kind, path, entry);
     node.parentHandle = dirHandle; // needed for delete / create operations
-    if (entry.kind === 'directory') {
-      node.children = await buildTreeFSA(entry, path);
-    }
+    if (entry.kind === 'directory') node.children = null; // lazy
     children.push(node);
+    if (++count % 200 === 0) await new Promise(r => setTimeout(r, 0));
   }
   return sortTreeNodes(children);
 }
 
+// ── Public: load children of a directory node (1 level, lazy) ──
+
+export async function loadChildren(node) {
+  if (node.kind !== 'directory' || !node.handle) return [];
+  return buildTreeLevel(node.handle, node.path);
+}
+
+// ── Public: immutably set children on the node at targetPath ───
+
+export function setChildrenInTree(tree, targetPath, children) {
+  if (targetPath === '') return children;
+  return tree.map(node => {
+    if (node.path === targetPath) return { ...node, children };
+    if (node.children && targetPath.startsWith(node.path + '/'))
+      return { ...node, children: setChildrenInTree(node.children, targetPath, children) };
+    return node;
+  });
+}
+
 // ── Public: rebuild tree from an existing root handle ──────
-// Used after file delete/create to refresh the in-memory tree.
+// Only rebuilds top level (lazy). Used after major changes.
 
 export async function rebuildTree(rootHandle) {
-  return buildTreeFSA(rootHandle);
+  return buildTreeLevel(rootHandle);
 }
 
 // ── Public: find a tree node by its path ───────────────────
@@ -212,7 +233,7 @@ export async function selectAndBuildTree() {
     if (!hasPermission) {
       throw new Error('未获得目录读取权限');
     }
-    const tree = await buildTreeFSA(handle);
+    const tree = await buildTreeLevel(handle);
     return { handle, tree, name: handle.name };
   }
 
@@ -498,7 +519,7 @@ export async function switchToSpace(spaceId) {
   if (!handle) throw new Error('该笔记空间已失效，请重新选择目录');
   const hasPermission = await verifyPermission(handle);
   if (!hasPermission) throw new Error('未获得目录读取权限');
-  const tree = await buildTreeFSA(handle);
+  const tree = await buildTreeLevel(handle);
   return { handle, tree, name: handle.name };
 }
 
@@ -510,6 +531,6 @@ export async function tryRestoreSpace(spaceId) {
   const handle = await getDirHandle(spaceId);
   if (!handle) return null;
   if ((await handle.queryPermission({ mode: 'read' })) !== 'granted') return null;
-  const tree = await buildTreeFSA(handle);
+  const tree = await buildTreeLevel(handle);
   return { handle, tree, name: handle.name };
 }

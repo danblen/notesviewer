@@ -323,20 +323,23 @@ function MarkdownViewer({ file }) {
     return () => { cancelled = true; };
   }, [file.node]);
 
+  // Memoize markdown parsing — must be before any early returns (rules of hooks)
+  const rendered = useMemo(() => {
+    if (!content) return null;
+    return (
+      <div className="markdown-content">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+    );
+  }, [content]);
+
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
-
-  // Memoize markdown parsing — rehype-highlight is expensive
-  const rendered = useMemo(() => (
-    <div className="markdown-content">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  ), [content]);
 
   return rendered;
 }

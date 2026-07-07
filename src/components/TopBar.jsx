@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, memo } from 'react';
+import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { FolderIcon, FolderOpenIcon, FileTypeIcon, ChevronRight, SpacesIcon, PlusIcon, MoreIcon, TrashIcon, DownloadIcon } from './Icons';
 
 /**
@@ -33,11 +33,14 @@ function TopBarInner({
   onSwitchSpace,
   onDeleteSpace,
   onCloneGithub,
+  onLoadChildren,
 }) {
-  const [hoveredL1, setHoveredL1] = useState(null);
+  const [hoveredL1Id, setHoveredL1Id] = useState(null);
+  const hoveredL1 = hoveredL1Id ? level1Items.find(i => i.id === hoveredL1Id) : null;
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
   const [activeL2, setActiveL2] = useState(null);
   const closeTimerRef = useRef(null);
+  const l1LoadingRef = useRef(new Set());
 
   // Spaces dropdown state
   const [spacesOpen, setSpacesOpen] = useState(false);
@@ -65,13 +68,13 @@ function TopBarInner({
         ? Math.max(4, rect.right - dropdownWidth)
         : rect.left;
       setDropdownPos({ top: rect.bottom + 4, left });
-      setHoveredL1(item);
+      setHoveredL1Id(item.id);
     }
   }, [onFileHover]);
 
   const handleL1Leave = useCallback((item) => {
     if (item.kind === 'file') onFileLeave();
-    closeTimerRef.current = setTimeout(() => setHoveredL1(null), 300);
+    closeTimerRef.current = setTimeout(() => setHoveredL1Id(null), 300);
   }, [onFileLeave]);
 
   const handleDropdownEnter = useCallback(() => {
@@ -79,8 +82,16 @@ function TopBarInner({
   }, []);
 
   const handleDropdownLeave = useCallback(() => {
-    closeTimerRef.current = setTimeout(() => setHoveredL1(null), 300);
+    closeTimerRef.current = setTimeout(() => setHoveredL1Id(null), 300);
   }, []);
+
+  // Lazy-load L1 folder children on hover
+  useEffect(() => {
+    if (hoveredL1 && hoveredL1.kind === 'directory' && hoveredL1.children === null && !l1LoadingRef.current.has(hoveredL1.id)) {
+      l1LoadingRef.current.add(hoveredL1.id);
+      onLoadChildren?.(hoveredL1);
+    }
+  }, [hoveredL1, onLoadChildren]);
 
   // ── L2 handlers ──────────────────────────────────────────
   const handleL2Enter = useCallback((item) => {
@@ -249,7 +260,9 @@ function TopBarInner({
           onMouseEnter={handleDropdownEnter}
           onMouseLeave={handleDropdownLeave}
         >
-          {hoveredL1.children && hoveredL1.children.length > 0 ? (
+          {hoveredL1.children === null ? (
+            <div className="l1-dropdown-loading">加载中…</div>
+          ) : hoveredL1.children.length > 0 ? (
             hoveredL1.children.map(l2 => (
               <div
                 key={l2.id}
@@ -263,7 +276,7 @@ function TopBarInner({
                     : <FileTypeIcon name={l2.name} size={14} />}
                 </span>
                 <span className="l2-name">{l2.name}</span>
-                {l2.kind === 'directory' && l2.children && l2.children.length > 0 && (
+                {l2.kind === 'directory' && (
                   <span className="l2-arrow"><ChevronRight size={10} /></span>
                 )}
               </div>

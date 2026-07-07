@@ -15,7 +15,8 @@ import {
   tryRestoreSpace,
   loadLastSpaceId,
   saveLastSpaceId,
-  rebuildTree,
+  loadChildren,
+  setChildrenInTree,
   findNodeByPath,
   deleteEntry,
   createFileEntry,
@@ -37,13 +38,18 @@ function loadNum(key, fallback, min, max) {
 export default function App() {
   const [rootName, setRootName] = useState(null);
   const [fileTree, setFileTree] = useState([]);
-  const [sidebarItems, setSidebarItems] = useState(null);
-  const [sidebarFolder, setSidebarFolder] = useState(null);
+  const [sidebarFolderPath, setSidebarFolderPath] = useState(null);
   const [currentFile, setCurrentFile] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Root directory handle — kept for tree rebuilds after file operations
   const rootHandleRef = useRef(null);
+  const fileTreeRef = useRef([]);
+  fileTreeRef.current = fileTree;
+
+  // Derived: find sidebar folder in tree, get its children
+  const sidebarFolder = sidebarFolderPath ? findNodeByPath(fileTree, sidebarFolderPath) : null;
+  const sidebarItems = sidebarFolder?.children ?? null;
 
   // Recent spaces
   const [recentSpaces, setRecentSpaces] = useState([]);
@@ -104,8 +110,7 @@ export default function App() {
       rootHandleRef.current = handle;
       setRootName(name);
       setFileTree(tree);
-      setSidebarItems(null);
-      setSidebarFolder(null);
+      setSidebarFolderPath(null);
       sidebarFolderRef.current = null;
       setCurrentFile(null);
       currentFileIdRef.current = null;
@@ -140,8 +145,7 @@ export default function App() {
       rootHandleRef.current = handle;
       setRootName(name);
       setFileTree(tree);
-      setSidebarItems(null);
-      setSidebarFolder(null);
+      setSidebarFolderPath(null);
       sidebarFolderRef.current = null;
       setCurrentFile(null);
       currentFileIdRef.current = null;
@@ -193,30 +197,35 @@ export default function App() {
     clearTimeout(fileOpenTimerRef.current);
   }, []);
 
-  // ── Rebuild tree + recover sidebar after file operations ─
-  // Use ref for sidebarFolder so refreshTree (and all callbacks that depend
-  // on it) keep stable identities — essential for React.memo on children.
+  // ── Reload children of a directory by path (after file ops) ──
+  // sidebarFolderRef stores the path string for stable callbacks
   const sidebarFolderRef = useRef(null);
-  const refreshTree = useCallback(async () => {
-    const handle = rootHandleRef.current;
-    if (!handle) return;
-    const newTree = await rebuildTree(handle);
-    setFileTree(newTree);
-    // Recover sidebar folder by path
-    const folderPath = sidebarFolderRef.current?.path ?? null;
-    if (folderPath) {
-      const folder = findNodeByPath(newTree, folderPath);
-      if (folder) {
-        setSidebarItems(folder.children || []);
-        setSidebarFolder(folder);
-        sidebarFolderRef.current = folder;
-      } else {
-        setSidebarItems(null);
-        setSidebarFolder(null);
-        sidebarFolderRef.current = null;
-      }
+
+  const reloadDirectory = useCallback(async (dirPath) => {
+    if (!dirPath) {
+      const handle = rootHandleRef.current;
+      if (!handle) return [];
+      const children = await loadChildren({ handle, path: '', kind: 'directory' });
+      setFileTree(children);
+      return children;
     }
-    return newTree;
+    const dirNode = findNodeByPath(fileTreeRef.current, dirPath);
+    if (!dirNode || !dirNode.handle) return [];
+    const children = await loadChildren(dirNode);
+    setFileTree(prev => setChildrenInTree(prev, dirPath, children));
+    return children;
+  }, []);
+
+  // ── Lazy-load children for a node (TopBar L1 hover + NavMenu expand) ──
+  const loadChildrenForNode = useCallback(async (node) => {
+    if (node.kind !== 'directory' || node.children !== null) return;
+    try {
+      const children = await loadChildren(node);
+      setFileTree(prev => setChildrenInTree(prev, node.path, children));
+    } catch (err) {
+      console.error('Failed to load children:', err);
+      setFileTree(prev => setChildrenInTree(prev, node.path, []));
+    }
   }, []);
 
   // ── Delete a file or directory from disk ────────────────
@@ -225,18 +234,18 @@ export default function App() {
     if (!node) return;
     try {
       await deleteEntry(node);
-      // If the deleted entry was the open file, clear it
       if (node.kind === 'file' && currentFileIdRef.current === node.id) {
         setCurrentFile(null);
         currentFileIdRef.current = null;
         dirtyRef.current = false;
       }
-      await refreshTree();
+      const parentPath = node.path.includes('/') ? node.path.slice(0, node.path.lastIndexOf('/')) : '';
+      await reloadDirectory(parentPath);
     } catch (err) {
       console.error('Delete error:', err);
       alert(`删除失败：\n${err.message}`);
     }
-  }, [refreshTree]);
+  }, [reloadDirectory]);
 
   // ── Create a new file inside a directory ─────────────────
   // (filename comes from the inline NavMenu input — no window.prompt)
@@ -254,11 +263,10 @@ export default function App() {
     try {
       const dirHandle = dirNode.handle || dirNode;
       await createFileEntry(dirHandle, name);
-      const newTree = await refreshTree();
-      // Find and open the newly created file
       const parentPath = dirNode.path ?? '';
       const filePath = parentPath ? `${parentPath}/${name}` : name;
-      const newNode = findNodeByPath(newTree, filePath);
+      const children = await reloadDirectory(parentPath);
+      const newNode = children.find(c => c.path === filePath);
       if (newNode && newNode.kind === 'file') {
         const type = getFileType(newNode.name);
         setCurrentFile({ node: newNode, name: newNode.name, path: newNode.path, type });
@@ -268,7 +276,7 @@ export default function App() {
       console.error('Create file error:', err);
       alert(`创建失败：\n${err.message}`);
     }
-  }, [refreshTree]);
+  }, [reloadDirectory]);
 
   // ── Create a new directory inside a directory ────────────
   const handleCreateFolder = useCallback(async (dirNode, name) => {
@@ -284,12 +292,12 @@ export default function App() {
     try {
       const dirHandle = dirNode.handle || dirNode;
       await createDirectoryEntry(dirHandle, name);
-      await refreshTree();
+      await reloadDirectory(dirNode.path ?? '');
     } catch (err) {
       console.error('Create folder error:', err);
       alert(`创建失败：\n${err.message}`);
     }
-  }, [refreshTree]);
+  }, [reloadDirectory]);
 
   // ── Rename a file or directory ───────────────────────────
   // (new name comes from the inline NavMenu input — no window.prompt)
@@ -304,27 +312,24 @@ export default function App() {
     //  if the target name already exists via getDirectoryHandle/getFileHandle)
     try {
       await renameEntry(node, newName);
-      // If the renamed entry was the open file, update currentFile reference
+      const parentPath = node.path.includes('/')
+        ? node.path.slice(0, node.path.lastIndexOf('/'))
+        : '';
+      const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+      const children = await reloadDirectory(parentPath);
       if (node.kind === 'file' && currentFileIdRef.current === node.id) {
-        const parentPath = node.path.includes('/')
-          ? node.path.slice(0, node.path.lastIndexOf('/'))
-          : '';
-        const newPath = parentPath ? `${parentPath}/${newName}` : newName;
-        const newTree = await refreshTree();
-        const newNode = findNodeByPath(newTree, newPath);
+        const newNode = children.find(c => c.path === newPath);
         if (newNode && newNode.kind === 'file') {
           const type = getFileType(newNode.name);
           setCurrentFile({ node: newNode, name: newNode.name, path: newNode.path, type });
           currentFileIdRef.current = newNode.id;
         }
-      } else {
-        await refreshTree();
       }
     } catch (err) {
       console.error('Rename error:', err);
       alert(`重命名失败：\n${err.message}`);
     }
-  }, [refreshTree]);
+  }, [reloadDirectory]);
 
   // ── Delete a workspace from the spaces dropdown ──────────
   // (confirmation is handled in the TopBar UI — no window.confirm)
@@ -344,8 +349,7 @@ export default function App() {
       rootHandleRef.current = null;
       setRootName(null);
       setFileTree([]);
-      setSidebarItems(null);
-      setSidebarFolder(null);
+      setSidebarFolderPath(null);
       sidebarFolderRef.current = null;
       setCurrentFile(null);
       currentFileIdRef.current = null;
@@ -355,11 +359,19 @@ export default function App() {
     }
   }, []);
 
-  // ── L2 folder hover → update sidebar ─────────────────────
-  const handleLevel2Hover = useCallback((folderNode) => {
-    setSidebarItems(folderNode.children || []);
-    setSidebarFolder(folderNode);
-    sidebarFolderRef.current = folderNode;
+  // ── L2 folder hover → update sidebar (lazy-load if needed) ──
+  const handleLevel2Hover = useCallback(async (folderNode) => {
+    setSidebarFolderPath(folderNode.path);
+    sidebarFolderRef.current = folderNode.path;
+    if (folderNode.children === null) {
+      try {
+        const children = await loadChildren(folderNode);
+        setFileTree(prev => setChildrenInTree(prev, folderNode.path, children));
+      } catch (err) {
+        console.error('Failed to load L2 children:', err);
+        setFileTree(prev => setChildrenInTree(prev, folderNode.path, []));
+      }
+    }
   }, []);
 
   // ── Sidebar resize (delta-based, no ref needed) ──────────
@@ -400,6 +412,7 @@ export default function App() {
         onSwitchSpace={handleSwitchSpace}
         onDeleteSpace={handleDeleteSpace}
         onCloneGithub={openClone}
+        onLoadChildren={loadChildrenForNode}
       />
       <div className="app-body">
         <Sidebar
@@ -413,6 +426,7 @@ export default function App() {
           onCreateFile={handleCreateFile}
           onCreateFolder={handleCreateFolder}
           onRenameEntry={handleRenameEntry}
+          onLoadChildren={loadChildrenForNode}
         />
         <div
           className="resizer sidebar-resizer"

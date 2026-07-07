@@ -193,6 +193,22 @@ body {
   color: var(--color-text-3);
   font-size: var(--font-size-sm);
 }
+.l1-dropdown-loading {
+  padding: 12px 8px;
+  text-align: center;
+  color: var(--color-text-3);
+  font-size: var(--font-size-sm);
+}
+.nav-loading {
+  padding: 8px 12px 8px 36px;
+  color: var(--color-text-3);
+  font-size: var(--font-size-sm);
+}
+.nav-empty {
+  padding: 8px 12px 8px 36px;
+  color: var(--color-text-3);
+  font-size: var(--font-size-sm);
+}
 
 /* ── Spaces switcher (top-right) ─────────────────────────── */
 .spaces-switcher {

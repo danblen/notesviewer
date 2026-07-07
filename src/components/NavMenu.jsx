@@ -29,9 +29,11 @@ import {
  */
 function NavMenuInner({
   items, onFileHover, onFileLeave, currentFileId, variant = 'sidebar',
-  onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry,
+  onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
 }) {
-  const [expandedItem, setExpandedItem] = useState(null);
+  const [expandedItemId, setExpandedItemId] = useState(null);
+  const expandedItem = expandedItemId ? items.find(i => i.id === expandedItemId) : null;
+  const expandLoadingRef = useRef(new Set());
   const toggleTimerRef = useRef(null);
 
   // More-menu (⋯) state
@@ -52,7 +54,7 @@ function NavMenuInner({
   const handleExpandEnter = useCallback((item) => {
     clearTimeout(toggleTimerRef.current);
     toggleTimerRef.current = setTimeout(() => {
-      setExpandedItem(prev => prev?.id === item.id ? null : item);
+      setExpandedItemId(prev => prev === item.id ? null : item.id);
     }, 80);
   }, []);
 
@@ -108,7 +110,7 @@ function NavMenuInner({
   }, [closeMore]);
 
   const startCreate = useCallback((item, type) => {
-    setExpandedItem(item); // auto-expand
+    setExpandedItemId(item.id); // auto-expand
     const defaultName = type === 'folder' ? '新建文件夹' : 'untitled.md';
     setCreating({ dirId: item.id, type, value: defaultName });
     closeMore();
@@ -122,14 +124,13 @@ function NavMenuInner({
     const item = confirmDelete?.item;
     if (!item) return;
     closeMore();
-    // Collapse if deleting an expanded folder
-    if (expandedItem?.id === item.id) setExpandedItem(null);
+    if (expandedItemId === item.id) setExpandedItemId(null);
     try {
       await onDeleteEntry?.(item);
     } catch (err) {
       alert(`删除失败：\n${err.message}`);
     }
-  }, [confirmDelete, closeMore, expandedItem, onDeleteEntry]);
+  }, [confirmDelete, closeMore, expandedItemId, onDeleteEntry]);
 
   // ── Rename commit / cancel ───────────────────────────────
   const commitRename = useCallback(async () => {
@@ -182,6 +183,14 @@ function NavMenuInner({
       createInputRef.current.select();
     }
   }, [creating?.dirId]);
+
+  // Lazy-load children when a folder is expanded
+  useEffect(() => {
+    if (expandedItem && expandedItem.kind === 'directory' && expandedItem.children === null && !expandLoadingRef.current.has(expandedItem.id)) {
+      expandLoadingRef.current.add(expandedItem.id);
+      onLoadChildren?.(expandedItem);
+    }
+  }, [expandedItem, onLoadChildren]);
 
   // ── Empty state ──────────────────────────────────────────
   if (!items || items.length === 0) {
@@ -239,9 +248,9 @@ function NavMenuInner({
             {item.kind === 'directory' ? (
               <>
                 <div className={`nav-item-row folder-row ${isMoreOpen(item.id) ? 'more-open' : ''}`}>
-                  {item.children && item.children.length > 0 ? (
+                  {item.kind === 'directory' ? (
                     <span
-                      className={`expand-icon ${expandedItem?.id === item.id ? 'expanded' : ''}`}
+                      className={`expand-icon ${expandedItemId === item.id ? 'expanded' : ''}`}
                       onMouseEnter={() => handleExpandEnter(item)}
                       onMouseLeave={handleExpandLeave}
                     >
@@ -256,7 +265,7 @@ function NavMenuInner({
                 </div>
 
                 {/* Inline children — expanded below parent, indented */}
-                {expandedItem?.id === item.id && (
+                {expandedItemId === item.id && (
                   <div className="nav-children">
                     {isCreatingHere && (
                       <div className="nav-item-row nav-create-row">
@@ -281,7 +290,9 @@ function NavMenuInner({
                         />
                       </div>
                     )}
-                    {item.children && item.children.length > 0 && (
+                    {item.children === null ? (
+                      <div className="nav-loading">加载中…</div>
+                    ) : item.children.length > 0 ? (
                       <NavMenu
                         items={item.children}
                         onFileHover={onFileHover}
@@ -292,7 +303,10 @@ function NavMenuInner({
                         onCreateFile={onCreateFile}
                         onCreateFolder={onCreateFolder}
                         onRenameEntry={onRenameEntry}
+                        onLoadChildren={onLoadChildren}
                       />
+                    ) : (
+                      <div className="nav-empty">空文件夹</div>
                     )}
                   </div>
                 )}
