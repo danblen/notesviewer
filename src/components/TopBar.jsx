@@ -93,6 +93,13 @@ function TopBarInner({
     }
   }, [hoveredL1, onLoadChildren]);
 
+  // Clear loading ref when the tree is fully replaced (e.g. new directory selected)
+  const treeGenRef = useRef(level1Items);
+  if (treeGenRef.current !== level1Items) {
+    treeGenRef.current = level1Items;
+    l1LoadingRef.current = new Set();
+  }
+
   // ── L2 handlers ──────────────────────────────────────────
   const handleL2Enter = useCallback((item) => {
     if (item.kind === 'file') {

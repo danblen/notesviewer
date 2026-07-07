@@ -221,7 +221,10 @@ export default function App() {
     if (node.kind !== 'directory' || node.children !== null) return;
     try {
       const children = await loadChildren(node);
-      setFileTree(prev => setChildrenInTree(prev, node.path, children));
+      setFileTree(prev => {
+        if (!findNodeByPath(prev, node.path)) return prev; // stale, tree replaced
+        return setChildrenInTree(prev, node.path, children);
+      });
     } catch (err) {
       console.error('Failed to load children:', err);
       setFileTree(prev => setChildrenInTree(prev, node.path, []));
