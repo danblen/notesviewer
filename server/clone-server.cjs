@@ -1,0 +1,298 @@
+/**
+ * clone-server.cjs — lightweight HTTP server for git clone operations.
+ *
+ * Endpoints:
+ *   GET  /api/health       — check git installation
+ *   GET  /api/clone        — SSE stream: clone a repo with live progress
+ *        query: repo=<owner/name or url>  dest=<absolute path>
+ *   POST /api/pick-folder  — native folder picker (macOS osascript), returns { path }
+ *
+ * No external dependencies — pure Node.js built-ins.
+ * Designed to be started automatically by the Vite dev plugin.
+ */
+
+const http = require('http');
+const https = require('https');
+const { spawn, execFile, execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+// ── Constants ─────────────────────────────────────────────
+
+const PORT = 5181;
+const CLONE_TIMEOUT = 10 * 60 * 1000;
+const MAX_BUFFER = 10 * 1024 * 1024;
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+// Error patterns — shared logic with client-side parseErrorFromLog in src/utils/clone.js
+const ERROR_PATTERNS = [
+  [/repository not found|not found$/i, '仓库不存在或无访问权限', '请检查仓库名称，私有仓库需使用 Token 认证'],
+  [/permission denied \(publickey\)/i, 'SSH 密钥认证失败', '请配置 SSH Key，或改用 HTTPS + Token 方式克隆'],
+  [/could not read username|authentication failed|terminal prompts disabled/i, '需要身份认证', '私有仓库请使用 Token：https://<token>@github.com/owner/repo.git'],
+  [/already exists and is not an empty directory/i, '目标目录已存在且非空', '请选择一个空目录或更换路径'],
+  [/could not resolve host|unable to access/i, '无法连接到 GitHub', '请检查网络连接或代理设置'],
+  [/eacces|permission denied/i, '没有目标目录的写入权限', '请选择一个有权限的目录，或更换克隆位置'],
+  [/operation not permitted/i, '系统拒绝了操作（macOS 权限限制）', '请在系统设置 → 隐私与安全性 → 完全磁盘访问权限 中添加终端/Node'],
+  [/could not create leading directories/i, '无法创建目标目录', '路径无效或没有写入权限，请重新选择'],
+];
+
+function matchError(text) {
+  for (const [re, message, suggestion] of ERROR_PATTERNS) {
+    if (re.test(text)) return { message, suggestion };
+  }
+  return null;
+}
+
+// ── Helpers ───────────────────────────────────────────────
+
+function sendJSON(res, code, data) {
+  res.writeHead(code, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+  res.end(JSON.stringify(data));
+}
+
+function normaliseRepo(input) {
+  const s = (input || '').trim();
+  if (!s) return null;
+  if (s.startsWith('git@')) return s;
+  if (/^https?:\/\//.test(s)) return s.endsWith('.git') ? s : s + '.git';
+  if (/^[\w.-]+\/[\w.-]+$/.test(s)) return `https://github.com/${s}.git`;
+  return s;
+}
+
+function resolveDestPath(raw) {
+  let dest = raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : raw;
+  dest = path.resolve(dest);
+  const parent = path.dirname(dest);
+  try {
+    fs.accessSync(parent, fs.constants.W_OK);
+  } catch {
+    try { fs.mkdirSync(parent, { recursive: true }); }
+    catch { return null; }
+  }
+  return dest;
+}
+
+function sseWrite(res, event, data) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+// ── Route handlers ────────────────────────────────────────
+
+function handleHealth(res) {
+  try {
+    const out = execFileSync('git', ['--version'], { encoding: 'utf-8', timeout: 3000 });
+    sendJSON(res, 200, { ok: true, git: out.trim() });
+  } catch {
+    sendJSON(res, 200, { ok: false, error: 'git 未安装或不在 PATH 中' });
+  }
+}
+
+/** Throttled SseWriteHelper: debounce percentage progress lines to 1 per 200ms. */
+function createProgressSender(res) {
+  let lastPct = '';
+  let pending = null;
+  let timer = null;
+  return function sendProgress(text) {
+    // Percentage lines like "Receiving objects:  45% (123/456)" — throttle
+    const m = text.match(/^(\w+ objects?:\s+\d+%)/);
+    if (m) {
+      if (m[1] === lastPct) return; // same percentage, skip
+      if (timer) return; // still waiting for next throttle window
+      pending = text;
+      timer = setTimeout(() => {
+        lastPct = m[1];
+        sseWrite(res, 'progress', { text: pending + '\n' });
+        pending = null;
+        timer = null;
+      }, 200);
+      return;
+    }
+    // Non-percentage line — flush immediately
+    sseWrite(res, 'progress', { text: text + '\n' });
+  };
+}
+
+function handleClone(req, res, url) {
+  const params = new URL(url, 'http://localhost').searchParams;
+  const repo = normaliseRepo(params.get('repo'));
+  const destRaw = params.get('dest');
+
+  if (!repo || !destRaw) {
+    sendJSON(res, 400, { error: '缺少 repo 或 dest 参数' });
+    return;
+  }
+
+  const dest = resolveDestPath(destRaw);
+  if (!dest) {
+    sendJSON(res, 400, { error: '目标路径无效或不可写', suggestion: '请选择一个有效的目录' });
+    return;
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    ...CORS_HEADERS,
+  });
+
+  sseWrite(res, 'progress', { text: `正在克隆 ${repo} → ${dest}\n` });
+  const sendProgress = createProgressSender(res);
+
+  let stderrBuf = '';
+
+  const child = spawn('git', ['clone', '--progress', repo, dest], {
+    timeout: CLONE_TIMEOUT,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+  });
+
+  child.stderr.on('data', (d) => {
+    const text = d.toString();
+    stderrBuf += text;
+    const lines = text.split(/[\r\n]/).filter((l) => l.trim());
+    for (const line of lines) sendProgress(line);
+  });
+
+  child.stdout.on('data', (d) => {
+    const text = d.toString().trim();
+    if (text) sendProgress(text);
+  });
+
+  child.on('error', (err) => {
+    sseWrite(res, 'error', err.code === 'ENOENT'
+      ? { message: '未安装 git', suggestion: '请先安装 Git：https://git-scm.com/downloads' }
+      : { message: '克隆失败', suggestion: err.message });
+    res.end();
+  });
+
+  child.on('close', (code) => {
+    if (code === 0) {
+      sseWrite(res, 'done', { path: dest });
+    } else {
+      const parsed = matchError(stderrBuf);
+      if (parsed) {
+        sseWrite(res, 'error', parsed);
+      } else {
+        const lastLine = stderrBuf.split(/[\r\n]/).filter(l => l.trim()).pop() || '';
+        sseWrite(res, 'error', {
+          message: `克隆失败（退出码 ${code}）`,
+          suggestion: lastLine.trim() || '请查看上方日志了解详情',
+        });
+      }
+    }
+    res.end();
+  });
+
+  req.on('close', () => child.kill('SIGTERM'));
+}
+
+async function handlePickFolder(res) {
+  const p = os.platform();
+  const opts = { timeout: 60_000 };
+
+  if (p === 'darwin') {
+    // Default to /Volumes/z for folder picker
+    const script = 'POSIX path of (choose folder default location (POSIX file "/Volumes/z"))';
+    execFile('osascript', ['-e', script], opts, (err, stdout, stderr) => {
+      if (err) {
+        sendJSON(res, 200, (err.code === 1 || /cancel/i.test(stderr)) ? { cancelled: true } : { error: '无法打开文件夹选择器' });
+        return;
+      }
+      sendJSON(res, 200, { path: stdout.trim().replace(/\/$/, '') });
+    });
+    return;
+  }
+
+  if (p === 'win32') {
+    const ps = 'Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq "OK") { Write-Output $f.SelectedPath }';
+    execFile('powershell', ['-NoProfile', '-Command', ps], opts, (err, stdout) => {
+      if (err) { sendJSON(res, 500, { error: '无法打开文件夹选择器' }); return; }
+      const out = stdout.trim();
+      sendJSON(res, 200, out ? { path: out } : { cancelled: true });
+    });
+    return;
+  }
+
+  // Linux
+  execFile('zenity', ['--file-selection', '--directory'], opts, (_err, stdout) => {
+    const out = stdout.trim();
+    sendJSON(res, 200, out ? { path: out } : { cancelled: true });
+  });
+}
+
+// ── Server ────────────────────────────────────────────────
+
+const server = http.createServer((req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS_HEADERS);
+    return res.end();
+  }
+
+  const url = req.url || '/';
+
+  try {
+    if (url.startsWith('/api/health') && req.method === 'GET') return handleHealth(res);
+    if (url.startsWith('/api/clone') && req.method === 'GET') return handleClone(req, res, url);
+    if (url.startsWith('/api/pick-folder') && req.method === 'POST') return handlePickFolder(res);
+    if (url.startsWith('/api/search-github') && req.method === 'GET') return handleSearchGithub(req, res, url);
+    sendJSON(res, 404, { error: 'Not found' });
+  } catch (err) {
+    console.error('[clone-server] unhandled:', err);
+    sendJSON(res, 500, { error: '服务器内部错误' });
+  }
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`[clone-server] port ${PORT} in use — assuming another instance`);
+  } else {
+    console.error('[clone-server] error:', err.message);
+  }
+});
+
+function shutdown() { server.close(); process.exit(0); }
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+server.listen(PORT, () => console.log(`[clone-server] http://localhost:${PORT}`));
+/** GET /api/search-github?q=<query> — proxy GitHub repository search. */
+function handleSearchGithub(req, res, url) {
+  const params = new URL(url, 'http://localhost').searchParams;
+  const q = (params.get('q') || '').trim();
+  if (!q || q.length < 2) {
+    sendJSON(res, 200, { items: [] });
+    return;
+  }
+
+  // GitHub Search API — public rate limit: 10 req/min, authenticated: 30 req/min
+  const apiUrl = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=8`;
+  const ghReq = https.get(apiUrl, {
+    headers: { 'User-Agent': 'notesview', 'Accept': 'application/vnd.github.v3+json' },
+    timeout: 8000,
+  }, (ghRes) => {
+    let body = '';
+    ghRes.on('data', (d) => body += d);
+    ghRes.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const items = (data.items || []).map((item) => ({
+          full_name: item.full_name,
+          description: item.description,
+          stars: item.stargazers_count,
+          language: item.language,
+          url: item.html_url,
+        }));
+        sendJSON(res, 200, { items });
+      } catch {
+        sendJSON(res, 200, { items: [] });
+      }
+    });
+  });
+
+  ghReq.on('error', () => sendJSON(res, 200, { items: [] }));
+  ghReq.on('timeout', () => { ghReq.destroy(); sendJSON(res, 200, { items: [] }); });
+}

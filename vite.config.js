@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { spawn } from 'child_process'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * Vite plugin: auto-start the clone-server.cjs alongside the dev server,
@@ -11,7 +15,12 @@ function cloneServerPlugin() {
   return {
     name: 'clone-server',
     configureServer(server) {
-      proc = spawn('node', ['clone-server.cjs'], { stdio: 'pipe' })
+      const serverScript = path.resolve(__dirname, 'server/clone-server.cjs')
+      proc = spawn('node', [serverScript], { stdio: 'pipe', cwd: __dirname })
+      proc.on('error', (err) => console.error('[clone-server] spawn error:', err.message))
+      proc.on('exit', (code) => {
+        if (code !== 0 && code !== null) console.error(`[clone-server] exited code ${code}`)
+      })
       proc.stdout.on('data', (d) => {
         const msg = d.toString().trim()
         if (msg) console.log(`  ${msg}`)
