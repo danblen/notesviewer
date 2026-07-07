@@ -435,6 +435,7 @@ export default function App() {
         />
         <div
           className="resizer sidebar-resizer"
+          style={{ left: sidebarWidth }}
           onMouseDown={onSidebarResizeStart}
           title="拖动调整侧边栏宽度"
         />
