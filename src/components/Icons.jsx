@@ -220,6 +220,22 @@ export function NewFolderIcon({ size = 14, className = '' }) {
   );
 }
 
+export function OpenWorkspaceIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path
+        d="M1.5 7c0-.4.3-.7.7-.7h3.1c.2 0 .4.1.5.2l1.1 1.1h6.9c.4 0 .7.3.7.7v4.8c0 .4-.3.7-.7.7H2.2c-.4 0-.7-.3-.7-.7V7z"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+        fill="currentColor"
+        fillOpacity="0.08"
+      />
+      <path d="M8 5.5V2M8 2L6 4M8 2L10 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /**
  * Returns the appropriate icon component for a file based on its name.
  */

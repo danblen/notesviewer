@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import {
   FolderIcon, FileTypeIcon, ChevronRight,
   MoreIcon, RenameIcon, NewFolderIcon, TrashIcon,
+  OpenWorkspaceIcon,
 } from './Icons';
 
 /**
@@ -30,6 +31,7 @@ import {
 function NavMenuInner({
   items, onFileHover, onFileLeave, currentFileId, variant = 'sidebar',
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
+  onOpenAsWorkspace,
 }) {
   const [expandedItemId, setExpandedItemId] = useState(null);
   const expandedItem = (expandedItemId && items) ? items.find(i => i.id === expandedItemId) : null;
@@ -102,6 +104,14 @@ function NavMenuInner({
     setMoreMenu(null);
     setConfirmDelete(null);
   }, []);
+
+  // ── Open as workspace ────────────────────────────────────
+  const handleOpenAsWorkspaceClick = useCallback(() => {
+    if (!moreMenu?.item) return;
+    const item = moreMenu.item;
+    closeMore();
+    onOpenAsWorkspace?.(item);
+  }, [moreMenu, closeMore, onOpenAsWorkspace]);
 
 
   // ── Dropdown action handlers ─────────────────────────────
@@ -305,6 +315,7 @@ function NavMenuInner({
                         onCreateFolder={onCreateFolder}
                         onRenameEntry={onRenameEntry}
                         onLoadChildren={onLoadChildren}
+                        onOpenAsWorkspace={onOpenAsWorkspace}
                       />
                                         ) : null}
                   </div>
@@ -361,6 +372,11 @@ function NavMenuInner({
               <>
                 {moreMenu.item.kind === 'directory' && (
                   <>
+                    <div className="more-menu-item" onClick={handleOpenAsWorkspaceClick}>
+                      <span className="more-menu-icon"><OpenWorkspaceIcon size={14} /></span>
+                      <span>打开为空间</span>
+                    </div>
+                    <div className="more-menu-divider" />
                     <div className="more-menu-item" onClick={() => startCreate(moreMenu.item, 'file')}>
                       <span className="more-menu-icon"><FileTypeIcon name="new.md" size={14} /></span>
                       <span>新建文件</span>

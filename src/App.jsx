@@ -22,6 +22,7 @@ import {
   createFileEntry,
   createDirectoryEntry,
   renameEntry,
+  openFolderAsWorkspace,
 } from './utils/fileSystem';
 
 const LS_SIDEBAR_W = 'nv_sidebar_width';
@@ -343,6 +344,41 @@ export default function App() {
     }
   }, [reloadDirectory]);
 
+  // ── Open a subfolder as the new workspace root ───────────
+  // Re-roots the file tree to the selected folder, registers it as a
+  // new space, and clears the sidebar + current file.
+  const handleOpenAsWorkspace = useCallback(async (node) => {
+    if (!node || node.kind !== 'directory') return;
+    if (dirtyRef.current && !window.confirm('当前文件有未保存的修改，是否放弃？')) return;
+    dirtyRef.current = false;
+    setLoading(true);
+    try {
+      const { handle, tree, name } = await openFolderAsWorkspace(node.handle);
+      rootHandleRef.current = handle;
+      setRootName(name);
+      setFileTree(tree);
+      setSidebarFolderPath(null);
+      sidebarFolderRef.current = null;
+      setCurrentFile(null);
+      currentFileIdRef.current = null;
+
+      // Register as a new space so it appears in the spaces switcher
+      if (handle) {
+        const spaceId = `space_${Date.now()}`;
+        await saveDirHandle(spaceId, handle);
+        setRecentSpaces(prev => addRecentSpace(prev, spaceId, name));
+        setActiveSpaceId(spaceId);
+        activeSpaceIdRef.current = spaceId;
+        saveLastSpaceId(spaceId);
+      }
+    } catch (err) {
+      console.error('Failed to open as workspace:', err);
+      alert(`打开空间失败：\n${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // ── Delete a workspace from the spaces dropdown ──────────
   // (confirmation is handled in the TopBar UI — no window.confirm)
   const recentSpacesRef = useRef([]);
@@ -432,6 +468,7 @@ export default function App() {
           onCreateFolder={handleCreateFolder}
           onRenameEntry={handleRenameEntry}
           onLoadChildren={loadChildrenForNode}
+          onOpenAsWorkspace={handleOpenAsWorkspace}
         />
         <div
           className="resizer sidebar-resizer"

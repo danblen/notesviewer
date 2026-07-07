@@ -159,6 +159,20 @@ export function setChildrenInTree(tree, targetPath, children) {
   });
 }
 
+// ── Public: open an existing directory handle as the workspace root ──
+//
+// Takes a FileSystemDirectoryHandle from a tree node and builds a fresh
+// root-level tree from it. Used by the "打开为空间" menu action to
+// re-root the workspace to a subfolder.
+
+export async function openFolderAsWorkspace(dirHandle) {
+  if (!dirHandle) {
+    throw new Error('当前浏览器不支持此操作，请使用 Chrome 或 Edge 打开');
+  }
+  const tree = await buildTreeLevel(dirHandle);
+  return { handle: dirHandle, tree, name: dirHandle.name };
+}
+
 // ── Public: rebuild tree from an existing root handle ──────
 // Only rebuilds top level (lazy). Used after major changes.
 

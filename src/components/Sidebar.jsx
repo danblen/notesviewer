@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import NavMenu from './NavMenu';
 import {
   MoreIcon, RenameIcon, NewFolderIcon, TrashIcon,
-  FolderIcon, FileTypeIcon,
+  FolderIcon, FileTypeIcon, OpenWorkspaceIcon,
 } from './Icons';
 
 /**
@@ -20,6 +20,7 @@ import {
 function SidebarInner({
   items, onFileHover, onFileLeave, currentFileId, width, folder,
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
+  onOpenAsWorkspace,
 }) {
   // More-menu (⋯) state
   const [moreMenu, setMoreMenu] = useState(null);      // { pos }
@@ -74,6 +75,13 @@ function SidebarInner({
     setMoreMenu(null);
     setConfirmDelete(false);
   }, []);
+
+  // ── Open as workspace ────────────────────────────────────
+  const handleOpenAsWorkspaceClick = useCallback(() => {
+    if (!folder) return;
+    closeMore();
+    onOpenAsWorkspace?.(folder);
+  }, [folder, closeMore, onOpenAsWorkspace]);
 
   // ── Dropdown action handlers ─────────────────────────────
   const startRename = useCallback(() => {
@@ -229,6 +237,7 @@ function SidebarInner({
           onCreateFolder={onCreateFolder}
           onRenameEntry={onRenameEntry}
           onLoadChildren={onLoadChildren}
+          onOpenAsWorkspace={onOpenAsWorkspace}
         />
       )}
 
@@ -263,6 +272,11 @@ function SidebarInner({
             ) : (
               /* ── Action menu ── */
               <>
+                <div className="more-menu-item" onClick={handleOpenAsWorkspaceClick}>
+                  <span className="more-menu-icon"><OpenWorkspaceIcon size={14} /></span>
+                  <span>打开为空间</span>
+                </div>
+                <div className="more-menu-divider" />
                 <div className="more-menu-item" onClick={() => startCreate('file')}>
                   <span className="more-menu-icon"><FileTypeIcon name="new.md" size={14} /></span>
                   <span>新建文件</span>
