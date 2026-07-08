@@ -22,7 +22,7 @@ import {
 function SidebarInner({
   items, onFileHover, onFileLeave, currentFileId, width, folder,
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
-  onOpenAsWorkspace,
+  onOpenAsWorkspace, revealPath,
   layoutMode, onToggleLayout,
   rootName, loading, recentSpaces, activeSpaceId,
   onSelectDirectory, onSwitchSpace, onDeleteSpace, onCloneGithub,
@@ -268,6 +268,7 @@ function SidebarInner({
             onRenameEntry={onRenameEntry}
             onLoadChildren={onLoadChildren}
             onOpenAsWorkspace={onOpenAsWorkspace}
+            revealPath={revealPath}
           />
         )
       )}

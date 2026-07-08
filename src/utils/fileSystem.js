@@ -544,3 +544,174 @@ export async function tryRestoreSpace(spaceId) {
   const tree = await buildTreeLevel(handle);
   return { handle, tree, name: handle.name };
 }
+
+// ============================================================
+// Full-text search — recursively walks the directory tree,
+// reads text files, and matches against the query (literal or
+// regex).  Results are streamed via onResult callback.
+//
+// Optimizations (VS Code-inspired):
+//  - Excludes heavy dirs (node_modules, .git, dist, …)
+//  - Reads files CONCURRENTLY in small batches (I/O parallelism)
+//  - Time-based yielding (every ~16ms) keeps UI responsive
+// ============================================================
+
+const MAX_SEARCH_FILE_SIZE = 1024 * 1024; // 1 MB
+const MAX_TOTAL_MATCHES = 1000;
+const SEARCH_CONCURRENCY = 8; // files read in parallel per batch
+
+// Directories that are always excluded from search.
+// Matches VS Code's default `search.exclude` + common build outputs.
+const EXCLUDED_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'build', '.next', '.nuxt',
+  'coverage', '.cache', '.turbo', '.parcel-cache',
+  '.svelte-kit', '.vercel', '.deno', '.gradle',
+  '.idea', '.vscode', '.DS_Store', 'out', '.output',
+  '__pycache__', '.pytest_cache', '.mypy_cache',
+  'vendor', 'bower_components', 'jspm_packages',
+]);
+
+const SEARCHABLE_EXTS = new Set([
+  'md','markdown','mdx','txt','log','csv',
+  'js','jsx','mjs','cjs','ts','tsx',
+  'json','json5','jsonc',
+  'css','scss','sass','less','styl',
+  'html','htm','xml','xhtml','vue','svelte',
+  'yml','yaml','toml','ini','conf','cfg','properties',
+  'py','pyw','pyi','java','kt','kts','scala','groovy',
+  'c','h','cpp','cc','cxx','hpp','hh','cs','go','rs','rb','erb','php','swift',
+  'sh','bash','zsh','fish','ksh','bat','cmd','ps1',
+  'sql','graphql','gql','lua','r','dart','pl','pm',
+  'clj','cljs','edn','ex','exs','hs','elm','ml','mli',
+  'proto','diff','patch','dockerfile','makefile','mk','cmake','nginx','vim','tf','env',
+]);
+const SEARCHABLE_SPECIAL = new Set([
+  'dockerfile','makefile','gnumakefile','cmakelists',
+  '.gitignore','.dockerignore','.npmignore','.env',
+  '.editorconfig','.eslintrc','.prettierrc','.babelrc',
+]);
+
+function isSearchableFile(filename) {
+  const base = filename.toLowerCase();
+  if (SEARCHABLE_SPECIAL.has(base)) return true;
+  const dot = filename.lastIndexOf('.');
+  if (dot <= 0) return false;
+  const ext = filename.slice(dot + 1).toLowerCase();
+  return SEARCHABLE_EXTS.has(ext);
+}
+
+/**
+ * Search all text files under rootHandle for `query`.
+ *
+ * Two-phase approach per directory:
+ *  1. Collect all entries (fast — no file I/O)
+ *  2. Search files CONCURRENTLY in batches of SEARCH_CONCURRENCY
+ *
+ * Directories in EXCLUDED_DIRS are skipped entirely.
+ *
+ * @param {FileSystemDirectoryHandle} rootHandle
+ * @param {string} query
+ * @param {object} opts
+ * @param {boolean} opts.useRegex       — treat query as a RegExp
+ * @param {boolean} opts.caseSensitive
+ * @param {AbortSignal} opts.signal     — abort to cancel
+ * @param {(result)=>void} opts.onResult  — called per file with matches
+ * @param {(stats)=>void} opts.onProgress — called with {files, matches}
+ */
+export async function searchInTree(rootHandle, query, opts = {}) {
+  const { useRegex = false, caseSensitive = false, signal, onResult, onProgress } = opts;
+  if (!rootHandle || !query) return;
+
+  let regex;
+  try {
+    const pattern = useRegex
+      ? query
+      : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    regex = new RegExp(pattern, caseSensitive ? 'g' : 'gi');
+  } catch {
+    return; // invalid regex — silently skip
+  }
+
+  let totalMatches = 0;
+  let filesScanned = 0;
+  let lastYield = performance.now();
+
+  const searchFile = async (fileHandle, filePath) => {
+    if (signal?.aborted) return;
+    try {
+      const file = await fileHandle.getFile();
+      if (file.size > MAX_SEARCH_FILE_SIZE) {
+        filesScanned++;
+        return;
+      }
+      const text = await file.text();
+      const lines = text.split('\n');
+      const matches = [];
+      for (let i = 0; i < lines.length && totalMatches < MAX_TOTAL_MATCHES; i++) {
+        regex.lastIndex = 0;
+        const m = regex.exec(lines[i]);
+        if (m) {
+          const lineText = lines[i].length > 200
+            ? lines[i].slice(0, 200) + '…'
+            : lines[i];
+          matches.push({
+            lineNum: i + 1,
+            text: lineText,
+            start: m.index,
+            length: m[0].length,
+          });
+          totalMatches++;
+        }
+      }
+      if (matches.length > 0) {
+        onResult?.({ path: filePath, name: fileHandle.name, handle: fileHandle, matches });
+      }
+    } catch { /* unreadable file — skip */ }
+    filesScanned++;
+  };
+
+  // Walk directory: collect entries, then search files concurrently
+  const walkDir = async (dirHandle, basePath) => {
+    if (signal?.aborted || totalMatches >= MAX_TOTAL_MATCHES) return;
+
+    // Phase 1: collect entries (fast — no file content I/O)
+    const fileEntries = [];
+    const subdirs = [];
+    for await (const entry of dirHandle.values()) {
+      if (signal?.aborted) return;
+      if (entry.kind === 'directory') {
+        if (!EXCLUDED_DIRS.has(entry.name.toLowerCase())) {
+          subdirs.push(entry);
+        }
+      } else if (isSearchableFile(entry.name)) {
+        const path = basePath ? `${basePath}/${entry.name}` : entry.name;
+        fileEntries.push({ handle: entry, path });
+      }
+    }
+
+    // Phase 2: search files concurrently in batches
+    for (let i = 0; i < fileEntries.length; i += SEARCH_CONCURRENCY) {
+      if (signal?.aborted || totalMatches >= MAX_TOTAL_MATCHES) return;
+
+      const batch = fileEntries.slice(i, i + SEARCH_CONCURRENCY);
+      await Promise.all(batch.map(f => searchFile(f.handle, f.path)));
+      onProgress?.({ files: filesScanned, matches: totalMatches });
+
+      // Time-based yield — keeps UI responsive without over-yielding
+      const now = performance.now();
+      if (now - lastYield > 16) {
+        await new Promise(r => setTimeout(r, 0));
+        lastYield = performance.now();
+      }
+    }
+
+    // Recurse into subdirectories (sequentially — avoids handle storms)
+    for (const sub of subdirs) {
+      if (signal?.aborted || totalMatches >= MAX_TOTAL_MATCHES) return;
+      const path = basePath ? `${basePath}/${sub.name}` : sub.name;
+      await walkDir(sub, path);
+    }
+  };
+
+  await walkDir(rootHandle, '');
+}

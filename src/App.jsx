@@ -1,9 +1,10 @@
-import { LayoutIcon } from './components/Icons';
+import { LayoutIcon, SearchIcon } from './components/Icons';
 import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
 import ContentArea from './components/ContentArea';
 import CloneModal from './components/CloneModal';
+import SearchPanel from './components/SearchPanel';
 import {
   selectAndBuildTree,
   getFileType,
@@ -91,6 +92,33 @@ export default function App() {
   const [showClone, setShowClone] = useState(false);
   const openClone = useCallback(() => setShowClone(true), []);
   const closeClone = useCallback(() => setShowClone(false), []);
+
+  // Search panel
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [revealPath, setRevealPath] = useState(null);
+  const [scrollTarget, setScrollTarget] = useState(null); // { line, path }
+  const searchHoverTimerRef = useRef(null);
+  const searchFileHoverTimerRef = useRef(null);
+
+  const handleSearchIconEnter = useCallback(() => {
+    clearTimeout(searchHoverTimerRef.current);
+    searchHoverTimerRef.current = setTimeout(() => setSearchOpen(true), 80);
+  }, []);
+
+  const handleSearchIconLeave = useCallback(() => {
+    clearTimeout(searchHoverTimerRef.current);
+  }, []);
+
+  const handleSearchIconClick = useCallback(() => {
+    clearTimeout(searchHoverTimerRef.current);
+    setSearchOpen(false);
+    setRevealPath(null);
+    setScrollTarget(null);
+  }, []);
+
+  const handleSearchResultLeave = useCallback(() => {
+    clearTimeout(searchFileHoverTimerRef.current);
+  }, []);
 
   const currentFileId = currentFile?.node?.id || null;
 
@@ -432,6 +460,43 @@ export default function App() {
     await loadChildrenForNode(folderNode);
   }, [loadChildrenForNode]);
 
+  // ── Hover a search match → open file + scroll to line + reveal in sidebar ──
+  const handleSearchResultHover = useCallback((result, match) => {
+    if (dirtyRef.current) return;
+
+    clearTimeout(searchFileHoverTimerRef.current);
+    searchFileHoverTimerRef.current = setTimeout(() => {
+      // Only reload the file if it's different from what's currently open
+      if (currentFileIdRef.current !== result.path) {
+        const fileNode = {
+          id: result.path,
+          name: result.name,
+          kind: 'file',
+          path: result.path,
+          handle: result.handle,
+        };
+        const type = getFileType(result.name);
+        setCurrentFile({ node: fileNode, name: result.name, path: result.path, type });
+        currentFileIdRef.current = result.path;
+
+        // Reveal in sidebar: set the L2 ancestor as sidebar folder
+        // (top-left mode), then set revealPath for NavMenu auto-expansion.
+        const segments = result.path.split('/');
+        if (segments.length >= 2) {
+          const l2Path = segments[0];
+          const l2Node = fileTreeRef.current.find(n => n.path === l2Path);
+          if (l2Node && layoutMode === 'top-left') {
+            handleLevel2Hover(l2Node);
+          }
+        }
+        setRevealPath(result.path);
+      }
+
+      // Always set scroll target — triggers scroll-to-line in CodeViewer
+      setScrollTarget({ line: match.lineNum, path: result.path });
+    }, 200);
+  }, [layoutMode, handleLevel2Hover]);
+
 
   // ── Sidebar resize (delta-based, no ref needed) ──────────
   const onSidebarResizeStart = useCallback((e) => {
@@ -501,6 +566,7 @@ export default function App() {
           onRenameEntry={handleRenameEntry}
           onLoadChildren={loadChildrenForNode}
           onOpenAsWorkspace={handleOpenAsWorkspace}
+          revealPath={revealPath}
         />
         <div
           className="resizer sidebar-resizer"
@@ -513,7 +579,25 @@ export default function App() {
           contentMaxWidth={contentMaxWidth}
           setContentMaxWidth={setContentMaxWidth}
           onDirtyChange={handleDirtyChange}
+          scrollTarget={scrollTarget}
         />
+        {/* Search trigger — hover to open, click to close */}
+        <div
+          className={`search-trigger ${searchOpen ? 'open' : ''}`}
+          onMouseEnter={handleSearchIconEnter}
+          onMouseLeave={handleSearchIconLeave}
+          onClick={handleSearchIconClick}
+          title={searchOpen ? '点击收起搜索' : '悬浮打开搜索'}
+        >
+          <SearchIcon size={16} className="search-trigger-icon" />
+        </div>
+        {searchOpen && (
+          <SearchPanel
+            rootHandle={rootHandleRef.current}
+            onHoverResult={handleSearchResultHover}
+            onLeaveResult={handleSearchResultLeave}
+          />
+        )}
       </div>
       {showClone && <CloneModal onClose={closeClone} onOpenAsSpace={handleSelectDirectory} />}
     </div>

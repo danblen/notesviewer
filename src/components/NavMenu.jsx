@@ -31,7 +31,7 @@ import {
 function NavMenuInner({
   items, onFileHover, onFileLeave, currentFileId, variant = 'sidebar',
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
-  onOpenAsWorkspace,
+  onOpenAsWorkspace, revealPath,
 }) {
   const [expandedItemId, setExpandedItemId] = useState(null);
   const expandedItem = (expandedItemId && items) ? items.find(i => i.id === expandedItemId) : null;
@@ -203,6 +203,21 @@ function NavMenuInner({
     }
   }, [expandedItem, onLoadChildren]);
 
+  // ── Reveal: auto-expand folders along revealPath ────────
+  // When revealPath is set (e.g. from search), expand the directory
+  // whose path is a prefix of revealPath.  Each recursive NavMenu
+  // level does the same, so the full path unfolds top-down.
+  useEffect(() => {
+    if (!revealPath || !items) return;
+    const target = items.find(item =>
+      item.kind === 'directory' &&
+      (revealPath === item.path || revealPath.startsWith(item.path + '/'))
+    );
+    if (target && expandedItemId !== target.id) {
+      setExpandedItemId(target.id);
+    }
+  }, [revealPath, items]); // eslint-disable-line -- expandedItemId omitted intentionally
+
   // ── Empty state ──────────────────────────────────────────
   if (!items || items.length === 0) {
     if (variant === 'sidebar') {
@@ -316,6 +331,7 @@ function NavMenuInner({
                         onRenameEntry={onRenameEntry}
                         onLoadChildren={onLoadChildren}
                         onOpenAsWorkspace={onOpenAsWorkspace}
+                        revealPath={revealPath}
                       />
                                         ) : null}
                   </div>

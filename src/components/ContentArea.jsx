@@ -11,6 +11,24 @@ const CONTENT_MIN = 400, CONTENT_MAX = 1800;
 // File types that can be edited in-app (text-based)
 const EDITABLE_TYPES = new Set(['markdown', 'code', 'text']);
 
+// ── Remark plugin: tag block elements with source line numbers ──
+// Adds data-source-line attr so the MarkdownViewer can scroll to the
+// block containing a specific source line (search result navigation).
+function remarkSourceLines() {
+  return (tree) => {
+    const walk = (node) => {
+      if (node.position && node.type !== 'root' && node.type !== 'text') {
+        if (!node.data) node.data = {};
+        if (!node.data.hProperties) node.data.hProperties = {};
+        node.data.hProperties['data-source-line'] = node.position.start.line;
+      }
+      if (node.children) node.children.forEach(walk);
+    };
+    walk(tree);
+    return tree;
+  };
+}
+
 /**
  * ContentArea — renders the currently hovered file.
  *
@@ -24,7 +42,7 @@ const EDITABLE_TYPES = new Set(['markdown', 'code', 'text']);
  * The reading column has an adjustable max-width, controlled by a
  * draggable handle on its right edge (hidden while editing).
  */
-export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth, onDirtyChange }) {
+export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth, onDirtyChange, scrollTarget }) {
   const areaRef = useRef(null);
   const [areaWidth, setAreaWidth] = useState(9999);
   const [editing, setEditing] = useState(false);
@@ -104,9 +122,9 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
           <PdfViewer file={file} />
         ) : (
           <div className="content-inner" style={{ maxWidth: effMax }}>
-            {file.type === 'markdown' && <MarkdownViewer file={file} />}
+            {file.type === 'markdown' && <MarkdownViewer file={file} scrollTarget={scrollTarget} />}
             {file.type === 'image' && <ImageViewer file={file} />}
-            {(file.type === 'code' || file.type === 'text') && <CodeViewer file={file} />}
+            {(file.type === 'code' || file.type === 'text') && <CodeViewer file={file} scrollTarget={scrollTarget} />}
             {file.type === 'other' && <UnsupportedViewer file={file} />}
           </div>
         )}
@@ -298,10 +316,11 @@ function Editor({ file, onDirtyChange, onExit }) {
 }
 
 // ── Markdown ──────────────────────────────────────────────
-function MarkdownViewer({ file }) {
+function MarkdownViewer({ file, scrollTarget }) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const containerRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -323,19 +342,56 @@ function MarkdownViewer({ file }) {
     return () => { cancelled = true; };
   }, [file.node]);
 
+  // Scroll to the block containing the target source line
+  // (triggered by search result hover)
+  useEffect(() => {
+    if (!scrollTarget || loading || !content) return;
+    if (scrollTarget.path !== file.node.path) return;
+
+    const raf = requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const els = container.querySelectorAll('[data-source-line]');
+      if (!els.length) return;
+
+      // Find the element with the largest source-line <= target line
+      let best = null;
+      let bestLine = -1;
+      els.forEach(el => {
+        const line = parseInt(el.getAttribute('data-source-line'), 10);
+        if (line <= scrollTarget.line && line > bestLine) {
+          best = el;
+          bestLine = line;
+        }
+      });
+
+      if (best) {
+        const scrollContainer = container.closest('.content-body');
+        if (scrollContainer) {
+          const rect = best.getBoundingClientRect();
+          const cRect = scrollContainer.getBoundingClientRect();
+          const offset = rect.top - cRect.top + scrollContainer.scrollTop - 80;
+          scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+        }
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scrollTarget, content, loading, file.node.path]);
+
   // Memoize markdown parsing — must be before any early returns (rules of hooks)
   const rendered = useMemo(() => {
     if (!content) return null;
     return (
-      <div className="markdown-content">
+      <div className="markdown-content" ref={containerRef}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[remarkGfm, remarkSourceLines]}
           rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         >
           {content}
         </ReactMarkdown>
       </div>
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content]);
 
   if (loading) return <div className="content-loading">加载中…</div>;
@@ -408,12 +464,13 @@ function ImageViewer({ file }) {
   );
 }
 
-// ── Code (syntax highlighted) ─────────────────────────────
-function CodeViewer({ file }) {
+// ── Code (syntax highlighted, with line numbers) ────────
+function CodeViewer({ file, scrollTarget }) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [highlightedHtml, setHighlightedHtml] = useState(null);
+  const preRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -443,7 +500,6 @@ function CodeViewer({ file }) {
     const supported = lang !== 'plaintext' && hljs.getLanguage(lang);
     const tooLarge = content.length > 500_000;
     if (supported && !tooLarge) {
-      // Defer to next frame to avoid blocking the initial paint
       const raf = requestAnimationFrame(() => {
         try {
           const html = hljs.highlight(content, { language: lang }).value;
@@ -454,14 +510,44 @@ function CodeViewer({ file }) {
     }
   }, [content, loading, error, file.name]);
 
+  // Scroll to a specific line (triggered by search result hover)
+  useEffect(() => {
+    if (!scrollTarget || loading || !content) return;
+    if (scrollTarget.path !== file.node.path) return;
+
+    const raf = requestAnimationFrame(() => {
+      const container = preRef.current?.closest('.content-body');
+      if (!container) return;
+
+      // Line height = 13px font-size * 1.6 line-height = 20.8px
+      // <pre> padding-top = 24px
+      const lineHeight = 20.8;
+      const paddingTop = 24;
+      const targetY = paddingTop + (scrollTarget.line - 1) * lineHeight;
+
+      // Scroll so the target line is ~80px from top (context above)
+      container.scrollTo({
+        top: Math.max(0, targetY - 80),
+        behavior: 'smooth',
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scrollTarget, content, loading, file.node.path]);
+
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
 
   const lang = getCodeLanguage(file.name);
+  const lineCount = content ? content.split('\n').length : 0;
 
   return (
     <div className="code-viewer">
-      <pre className="code-pre">
+      <div className="code-gutter">
+        {Array.from({ length: lineCount }, (_, i) => (
+          <div key={i} className="code-line-num">{i + 1}</div>
+        ))}
+      </div>
+      <pre className="code-pre" ref={preRef}>
         {highlightedHtml ? (
           <code
             className={`hljs language-${lang}`}

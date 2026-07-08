@@ -236,6 +236,34 @@ export function OpenWorkspaceIcon({ size = 14, className = '' }) {
   );
 }
 
+export function SearchIcon({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function RegexIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M2 8h4M4 6v4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="9.5" cy="8" r="1.8" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M12.5 5.5l1 1M13.5 10.5l-1 1" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function CaseSensitiveIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+      <text x="2" y="12" fontSize="8" fontWeight="700" fill="currentColor" fontFamily="serif">A</text>
+      <text x="8.5" y="12" fontSize="6.5" fontWeight="500" fill="currentColor" fontFamily="serif">a</text>
+    </svg>
+  );
+}
+
 /**
  * Returns the appropriate icon component for a file based on its name.
  */
