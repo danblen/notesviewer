@@ -118,12 +118,10 @@ body {
   z-index: 100;
 }
 .sidebar-space-wrap {
-  flex: 1;
   min-width: 0;
 }
 .sidebar-space-wrap .spaces-switcher {
   margin-left: 0;
-  width: 100%;
 }
 
 /* Level-1 items (right side of topbar, left-aligned within section) */

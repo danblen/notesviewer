@@ -180,12 +180,14 @@ function SidebarInner({
     />
   ) : null;
 
-  const isLeftOnly = layoutMode === 'left-only';
+  // Show sidebar header (with layout toggle + space selector) in any mode
+  // that does NOT use the TopBar (i.e. 'left-only' and 'left-right').
+  const isSidebarHeaderMode = layoutMode !== 'top-left';
 
   return (
     <aside className="sidebar" style={{ width }}>
-      {/* Left-only mode: header with layout toggle + space switcher */}
-      {isLeftOnly && (
+      {/* Left-only / left-right mode: header with layout toggle + space switcher */}
+      {isSidebarHeaderMode && (
         <div className="sidebar-left-header">
           <LayoutToggle layoutMode={layoutMode} onToggleLayout={onToggleLayout} />
           <div className="sidebar-space-wrap">
@@ -204,7 +206,7 @@ function SidebarInner({
       )}
 
       {/* Top-left mode: folder header */}
-      {!isLeftOnly && folder && (
+      {!isSidebarHeaderMode && folder && (
         <>
           <div className="sidebar-header">
             <span className="nav-item-icon"><FolderIcon size={14} /></span>
@@ -250,9 +252,9 @@ function SidebarInner({
         </>
       )}
 
-      {/* Left-only: always show NavMenu (show empty hint when no items) */}
+      {/* Sidebar-header modes: always show NavMenu (show empty hint when no items) */}
       {/* Top-left: show NavMenu only when folder is selected */}
-      {(isLeftOnly || folder) && (
+      {(isSidebarHeaderMode || folder) && (
         items === null ? (
           <div className="sidebar-empty">加载中…</div>
         ) : (

@@ -42,7 +42,7 @@ function loadNum(key, fallback, min, max) {
 function loadLayout() {
   const v = localStorage.getItem(LS_LAYOUT);
   const valid = ['left-right', 'top-left', 'left-only'];
-  return valid.includes(v) ? v : 'left-right';
+  return valid.includes(v) ? v : 'top-left';
 }
 
 export default function App() {
@@ -544,8 +544,8 @@ export default function App() {
       )}
       <div className="app-body">
         <Sidebar
-          items={layoutMode === 'left-only' ? fileTree : sidebarItems}
-          folder={layoutMode === 'left-only' ? null : sidebarFolder}
+          items={layoutMode === 'top-left' ? sidebarItems : fileTree}
+          folder={layoutMode === 'top-left' ? sidebarFolder : null}
           width={sidebarWidth}
           currentFileId={currentFileId}
           layoutMode={layoutMode}
