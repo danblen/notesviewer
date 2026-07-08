@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ExitIcon } from './Icons';
 import { cloneRepo, pickFolder, saveLastPath, checkHealth, searchRepos } from '../utils/clone';
+import { getServerUrl, setServerUrl, getServerLabel, isDev } from '../utils/apiConfig';
 
 const DEFAULT_DEST = '/Volumes/z/codemy';
 let _taskId = 0;
@@ -16,6 +17,9 @@ export default function CloneModal({ onClose, onOpenAsSpace }) {
   const [repo, setRepo] = useState('');
   const [dest, setDest] = useState(DEFAULT_DEST);
   const [health, setHealth] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [editingServer, setEditingServer] = useState(false);
+  const [serverUrlInput, setServerUrlInput] = useState('');
 
   // Search dropdown
   const [results, setResults] = useState([]);
@@ -37,8 +41,13 @@ export default function CloneModal({ onClose, onOpenAsSpace }) {
   const dropdownRef = useRef(null);
   const searchTimerRef = useRef(null);
 
-  // Health
-  useEffect(() => { checkHealth().then(setHealth); }, []);
+  // Health (re-runnable so the UI can reconnect after changing the server URL)
+  const refreshHealth = useCallback(async () => {
+    setHealthLoading(true);
+    setHealth(await checkHealth());
+    setHealthLoading(false);
+  }, []);
+  useEffect(() => { refreshHealth(); }, [refreshHealth]);
 
   // Debounced search
   useEffect(() => {
@@ -100,6 +109,27 @@ export default function CloneModal({ onClose, onOpenAsSpace }) {
     if (dest.endsWith('/' + name)) return dest;
     return `${dest.replace(/\/$/, '')}/${name}`;
   }, [repo, dest]);
+
+  // ── Server URL config (lets GitHub Pages deployments point at a local service) ──
+  const startEditServer = useCallback(() => {
+    setServerUrlInput(getServerUrl() || (isDev() ? '' : 'http://localhost:5181'));
+    setEditingServer(true);
+  }, []);
+
+  const saveServerUrl = useCallback(async () => {
+    setServerUrl(serverUrlInput);
+    setEditingServer(false);
+    await refreshHealth();
+  }, [serverUrlInput, refreshHealth]);
+
+  const cancelEditServer = useCallback(() => setEditingServer(false), []);
+
+  const resetServerUrl = useCallback(async () => {
+    setServerUrl('');
+    setServerUrlInput('');
+    setEditingServer(false);
+    await refreshHealth();
+  }, [refreshHealth]);
 
   // ── Clone as task ──
   const handleClone = useCallback(() => {
@@ -180,7 +210,39 @@ export default function CloneModal({ onClose, onOpenAsSpace }) {
           <button className="clone-close" onClick={onClose}><ExitIcon size={14} /></button>
         </div>
 
-        {health && !health.ok && <div className="clone-health-warn">{health.error || '克隆服务未就绪'}</div>}
+        {/* Server connection bar — shows status + lets users configure the backend URL */}
+        <div className="clone-server-bar">
+          <div className="clone-server-row">
+            <span className={`clone-server-dot ${health?.ok ? 'ok' : health ? 'down' : 'pending'}`} />
+            <span className="clone-server-status">
+              {healthLoading ? '检测中…' : !health ? '' : health.ok ? '克隆服务已连接' : '克隆服务未连接'}
+            </span>
+            <span className="clone-server-url" title={getServerLabel()}>{getServerLabel()}</span>
+            <div className="clone-server-actions">
+              {!editingServer && <button className="clone-server-btn" onClick={startEditServer}>配置</button>}
+              {!editingServer && health && !health.ok && <button className="clone-server-btn" onClick={refreshHealth}>重试</button>}
+            </div>
+          </div>
+          {editingServer && (
+            <div className="clone-server-edit-row">
+              <input className="clone-input clone-input-sm" type="text"
+                value={serverUrlInput} onChange={(e) => setServerUrlInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveServerUrl(); if (e.key === 'Escape') cancelEditServer(); }}
+                placeholder="http://localhost:5181" spellCheck={false} autoComplete="off" autoFocus />
+              <button className="clone-server-btn primary" onClick={saveServerUrl}>保存</button>
+              <button className="clone-server-btn" onClick={cancelEditServer}>取消</button>
+              <button className="clone-server-btn" onClick={resetServerUrl} title="恢复默认地址">重置</button>
+            </div>
+          )}
+          {health && !health.ok && (
+            <div className="clone-server-hint">
+              {health.error ? `${health.error}。` : ''}
+              {isDev()
+                ? '请确认克隆服务已随开发服务器启动（查看终端日志）'
+                : <>GitHub Pages 无后端，需在本地启动克隆服务：在 notesview 目录运行 <code>npm run server</code>，再点击「重试」。浏览器需允许访问 localhost。</>}
+            </div>
+          )}
+        </div>
 
         <div className="clone-body">
           {/* Repo input */}

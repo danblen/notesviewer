@@ -9,11 +9,13 @@
  * Last download path is persisted in localStorage.
  */
 
+import { apiUrl } from './apiConfig';
+
 /** Search GitHub repositories via the clone server proxy. */
 export async function searchRepos(query) {
   if (!query || query.trim().length < 2) return [];
   try {
-    const r = await fetch(`/api/search-github?q=${encodeURIComponent(query.trim())}`);
+    const r = await fetch(apiUrl(`/api/search-github?q=${encodeURIComponent(query.trim())}`));
     return (await r.json()).items || [];
   } catch {
     return [];
@@ -32,7 +34,7 @@ export function saveLastPath(p) {
 
 export async function checkHealth() {
   try {
-    const r = await fetch('/api/health');
+    const r = await fetch(apiUrl('/api/health'));
     return await r.json();
   } catch {
     return { ok: false, error: '无法连接到克隆服务' };
@@ -41,7 +43,7 @@ export async function checkHealth() {
 
 export async function pickFolder() {
   try {
-    const r = await fetch('/api/pick-folder', { method: 'POST' });
+    const r = await fetch(apiUrl('/api/pick-folder'), { method: 'POST' });
     return await r.json();
   } catch {
     return { error: '无法打开文件夹选择器' };
@@ -61,7 +63,7 @@ export async function pickFolder() {
  */
 export function cloneRepo(repo, dest, { onProgress, onDone, onError } = {}) {
   const params = new URLSearchParams({ repo, dest });
-  const es = new EventSource(`/api/clone?${params}`);
+  const es = new EventSource(apiUrl(`/api/clone?${params}`));
 
   es.addEventListener('progress', (e) => {
     try {

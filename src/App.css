@@ -1297,10 +1297,54 @@ body {
 }
 .clone-close:hover { background: var(--color-bg-hover); color: var(--color-text); }
 
-.clone-health-warn {
-  padding: 8px 20px; font-size: var(--font-size-sm);
-  color: #b05000; background: #fff8e6;
-  border-bottom: 1px solid #f5e6c8;
+/* Server connection bar (replaces clone-health-warn) */
+.clone-server-bar {
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg-secondary);
+  display: flex; flex-direction: column; gap: 6px;
+  flex-shrink: 0;
+}
+.clone-server-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--font-size-sm);
+}
+.clone-server-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-3);
+}
+.clone-server-dot.ok { background: #89d185; box-shadow: 0 0 0 3px rgba(137,209,133,.18); }
+.clone-server-dot.down { background: #f48771; box-shadow: 0 0 0 3px rgba(244,135,113,.18); }
+.clone-server-dot.pending { background: #e0b341; box-shadow: 0 0 0 3px rgba(224,179,65,.18); }
+.clone-server-status { color: var(--color-text-2); flex-shrink: 0; }
+.clone-server-url {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0;
+}
+.clone-server-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.clone-server-btn {
+  padding: 2px 10px; font-size: 11px; border-radius: 3px;
+  border: 1px solid var(--color-border);
+  background: transparent; color: var(--color-text-2);
+  font-family: var(--font-sans); cursor: pointer; white-space: nowrap;
+  transition: background .1s, color .1s, border-color .1s;
+}
+.clone-server-btn:hover { background: var(--color-bg-hover); color: var(--color-text); border-color: var(--color-text-3); }
+.clone-server-btn.primary { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
+.clone-server-btn.primary:hover { opacity: .9; }
+.clone-server-edit-row {
+  display: flex; gap: 6px; align-items: center;
+}
+.clone-server-edit-row .clone-input { flex: 1; min-width: 0; }
+.clone-server-hint {
+  font-size: 11px; line-height: 1.5; color: var(--color-text-3);
+}
+.clone-server-hint code {
+  font-family: var(--font-mono); font-size: 11px;
+  background: var(--color-bg-3); padding: 1px 5px; border-radius: 3px;
 }
 
 .clone-body {

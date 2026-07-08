@@ -3,6 +3,8 @@
  * with a webkitdirectory fallback for Safari/Firefox.
  */
 
+import { apiUrl } from './apiConfig';
+
 // ── Code language map (extension → highlight.js language) ─────────
 const CODE_LANG_MAP = {
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
@@ -148,7 +150,7 @@ export async function loadChildren(node) {
   // Server-backed node (cloned repo opened without File System Access API)
   if (node.serverPath) {
     try {
-      const r = await fetch(`/api/read-tree?path=${encodeURIComponent(node.serverPath)}`);
+      const r = await fetch(apiUrl(`/api/read-tree?path=${encodeURIComponent(node.serverPath)}`));
       if (!r.ok) return [];
       const { children } = await r.json();
       const basePath = node.path;
@@ -210,7 +212,7 @@ export async function openFolderAsWorkspace(dirHandle) {
 // `handle`.  File reading goes through /api/read-file.
 
 export async function openPathAsSpace(destPath) {
-  const r = await fetch(`/api/read-tree?path=${encodeURIComponent(destPath)}`);
+  const r = await fetch(apiUrl(`/api/read-tree?path=${encodeURIComponent(destPath)}`));
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
     throw new Error(err.error || '无法读取目录');
@@ -332,7 +334,7 @@ export async function getFileObject(fileNode) {
 
   // Server-backed file (cloned repo opened without File System Access API)
   if (fileNode.serverPath && !fileNode.handle) {
-    const r = await fetch(`/api/read-file?path=${encodeURIComponent(fileNode.serverPath)}`);
+    const r = await fetch(apiUrl(`/api/read-file?path=${encodeURIComponent(fileNode.serverPath)}`));
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       throw new Error(err.error || '无法读取文件');
