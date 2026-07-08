@@ -239,6 +239,8 @@ const server = http.createServer((req, res) => {
     if (url.startsWith('/api/clone') && req.method === 'GET') return handleClone(req, res, url);
     if (url.startsWith('/api/pick-folder') && req.method === 'POST') return handlePickFolder(res);
     if (url.startsWith('/api/search-github') && req.method === 'GET') return handleSearchGithub(req, res, url);
+    if (url.startsWith('/api/read-tree') && req.method === 'GET') return handleReadTree(res, url);
+    if (url.startsWith('/api/read-file') && req.method === 'GET') return handleReadFile(res, url);
     sendJSON(res, 404, { error: 'Not found' });
   } catch (err) {
     console.error('[clone-server] unhandled:', err);
@@ -295,4 +297,77 @@ function handleSearchGithub(req, res, url) {
 
   ghReq.on('error', () => sendJSON(res, 200, { items: [] }));
   ghReq.on('timeout', () => { ghReq.destroy(); sendJSON(res, 200, { items: [] }); });
+}
+
+/** GET /api/read-tree?path=<absPath> — read one level of a directory.
+ *  Returns { name, children: [{ name, kind, path }] }.
+ *  Used by the "open cloned repo as space" feature to bypass the
+ *  File System Access API folder picker.
+ */
+function handleReadTree(res, url) {
+  const params = new URL(url, 'http://localhost').searchParams;
+  const dirPath = params.get('path');
+  if (!dirPath) {
+    sendJSON(res, 400, { error: '缺少 path 参数' });
+    return;
+  }
+
+  try {
+    const stat = fs.statSync(dirPath);
+    if (!stat.isDirectory()) {
+      sendJSON(res, 400, { error: '路径不是目录' });
+      return;
+    }
+
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const children = entries
+      .filter((e) => !(e.isDirectory() && e.name === '.git'))
+      .map((e) => ({
+        name: e.name,
+        kind: e.isDirectory() ? 'directory' : 'file',
+        path: path.join(dirPath, e.name),
+      }))
+      .sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+        return a.name.localeCompare(b.name, 'zh-CN', { numeric: true });
+      });
+
+    sendJSON(res, 200, { name: path.basename(dirPath), children });
+  } catch (err) {
+    sendJSON(res, 400, { error: `无法读取目录: ${err.message}` });
+  }
+}
+
+/** GET /api/read-file?path=<absPath> — stream a file's raw bytes.
+ *  Used by getFileObject() for server-backed spaces (cloned repos).
+ */
+function handleReadFile(res, url) {
+  const params = new URL(url, 'http://localhost').searchParams;
+  const filePath = params.get('path');
+  if (!filePath) {
+    sendJSON(res, 400, { error: '缺少 path 参数' });
+    return;
+  }
+
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) {
+      sendJSON(res, 400, { error: '路径不是文件' });
+      return;
+    }
+    if (stat.size > 50 * 1024 * 1024) {
+      sendJSON(res, 400, { error: '文件过大（超过 50MB）' });
+      return;
+    }
+
+    const data = fs.readFileSync(filePath);
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': data.length,
+      ...CORS_HEADERS,
+    });
+    res.end(data);
+  } catch (err) {
+    sendJSON(res, 400, { error: `无法读取文件: ${err.message}` });
+  }
 }

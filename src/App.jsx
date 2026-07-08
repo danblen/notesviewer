@@ -25,6 +25,7 @@ import {
   createDirectoryEntry,
   renameEntry,
   openFolderAsWorkspace,
+  openPathAsSpace,
 } from './utils/fileSystem';
 
 const LS_SIDEBAR_W = 'nv_sidebar_width';
@@ -54,6 +55,8 @@ export default function App() {
 
   // Root directory handle — kept for tree rebuilds after file operations
   const rootHandleRef = useRef(null);
+  // Server root path — set when a cloned repo is opened without File System Access API
+  const serverRootRef = useRef(null);
   const fileTreeRef = useRef([]);
   fileTreeRef.current = fileTree;
 
@@ -137,6 +140,7 @@ export default function App() {
       tryRestoreSpace(tryId).then(result => {
         if (result) {
           rootHandleRef.current = result.handle;
+          serverRootRef.current = null;
           setRootName(result.name);
           setFileTree(result.tree);
           setActiveSpaceId(tryId);
@@ -155,6 +159,7 @@ export default function App() {
     try {
       const { tree, name, handle } = await selectAndBuildTree();
       rootHandleRef.current = handle;
+      serverRootRef.current = null;
       setRootName(name);
       setFileTree(tree);
       setSidebarFolderPath(null);
@@ -190,6 +195,7 @@ export default function App() {
     try {
       const { tree, name, handle } = await switchToSpace(spaceId);
       rootHandleRef.current = handle;
+      serverRootRef.current = null;
       setRootName(name);
       setFileTree(tree);
       setSidebarFolderPath(null);
@@ -250,6 +256,12 @@ export default function App() {
 
   const reloadDirectory = useCallback(async (dirPath) => {
     if (!dirPath) {
+      // Server-backed root (cloned repo)
+      if (serverRootRef.current) {
+        const children = await loadChildren({ serverPath: serverRootRef.current, path: '', kind: 'directory' });
+        setFileTree(children);
+        return children;
+      }
       const handle = rootHandleRef.current;
       if (!handle) return [];
       const children = await loadChildren({ handle, path: '', kind: 'directory' });
@@ -401,6 +413,7 @@ export default function App() {
     try {
       const { handle, tree, name } = await openFolderAsWorkspace(node.handle);
       rootHandleRef.current = handle;
+      serverRootRef.current = null;
       setRootName(name);
       setFileTree(tree);
       setSidebarFolderPath(null);
@@ -425,6 +438,36 @@ export default function App() {
     }
   }, []);
 
+  // ── Open a freshly-cloned repo as a space (server-backed) ──
+  // Bypasses the File System Access API folder picker — reads the
+  // directory tree directly via the backend clone-server.
+  const handleOpenClonedSpace = useCallback(async (destPath) => {
+    if (!destPath) return;
+    if (dirtyRef.current && !window.confirm('当前文件有未保存的修改，是否放弃？')) return;
+    dirtyRef.current = false;
+    setLoading(true);
+    try {
+      const { tree, name, serverRoot } = await openPathAsSpace(destPath);
+      rootHandleRef.current = null;
+      serverRootRef.current = serverRoot;
+      setRootName(name);
+      setFileTree(tree);
+      setSidebarFolderPath(null);
+      sidebarFolderRef.current = null;
+      setCurrentFile(null);
+      currentFileIdRef.current = null;
+      setActiveSpaceId(null);
+      activeSpaceIdRef.current = null;
+      saveLastSpaceId(null);
+      closeClone();
+    } catch (err) {
+      console.error('Failed to open cloned space:', err);
+      alert(`打开克隆仓库失败：\n${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [closeClone]);
+
   // ── Delete a workspace from the spaces dropdown ──────────
   // (confirmation is handled in the TopBar UI — no window.confirm)
   const recentSpacesRef = useRef([]);
@@ -441,6 +484,7 @@ export default function App() {
     // If it was the active space, clear everything
     if (isActive) {
       rootHandleRef.current = null;
+      serverRootRef.current = null;
       setRootName(null);
       setFileTree([]);
       setSidebarFolderPath(null);
@@ -599,7 +643,7 @@ export default function App() {
           />
         )}
       </div>
-      {showClone && <CloneModal onClose={closeClone} onOpenAsSpace={handleSelectDirectory} />}
+      {showClone && <CloneModal onClose={closeClone} onOpenAsSpace={handleOpenClonedSpace} />}
     </div>
   );
 }

@@ -173,7 +173,7 @@ export default function CloneModal({ onClose, onOpenAsSpace }) {
 
   return (
     <div className="clone-overlay">
-      <div ref={modalRef} className="clone-modal" style={{ transform: `translate(${drag.x}px, ${drag.y}px)` }}>
+      <div ref={modalRef} className="clone-modal" style={{ transform: `translate(calc(-50% + ${drag.x}px), calc(-50% + ${drag.y}px))` }}>
         {/* Draggable header */}
         <div className="clone-header" onMouseDown={onDragStart}>
           <span className="clone-title">克隆 GitHub 项目</span>
@@ -238,7 +238,7 @@ export default function CloneModal({ onClose, onOpenAsSpace }) {
                       <button className="clone-task-cancel" onClick={(e) => { e.stopPropagation(); cancelTask(t.id); }}>取消</button>
                     )}
                     {t.status === 'done' && onOpenAsSpace && (
-                      <button className="clone-task-open" onClick={(e) => { e.stopPropagation(); onOpenAsSpace(); }}
+                      <button className="clone-task-open" onClick={(e) => { e.stopPropagation(); onOpenAsSpace(t.dest); }}
                         title="打开为笔记空间">打开</button>
                     )}
                   </span>

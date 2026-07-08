@@ -143,7 +143,34 @@ async function buildTreeLevel(dirHandle, basePath = '') {
 // ── Public: load children of a directory node (1 level, lazy) ──
 
 export async function loadChildren(node) {
-  if (node.kind !== 'directory' || !node.handle) return [];
+  if (node.kind !== 'directory') return [];
+
+  // Server-backed node (cloned repo opened without File System Access API)
+  if (node.serverPath) {
+    try {
+      const r = await fetch(`/api/read-tree?path=${encodeURIComponent(node.serverPath)}`);
+      if (!r.ok) return [];
+      const { children } = await r.json();
+      const basePath = node.path;
+      return children.map((c) => {
+        const childRelPath = basePath ? `${basePath}/${c.name}` : c.name;
+        return {
+          id: childRelPath,
+          name: c.name,
+          kind: c.kind,
+          path: childRelPath,
+          handle: null,
+          serverPath: c.path,
+          file: null,
+          children: c.kind === 'directory' ? null : null,
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  if (!node.handle) return [];
   return buildTreeLevel(node.handle, node.path);
 }
 
@@ -171,6 +198,35 @@ export async function openFolderAsWorkspace(dirHandle) {
   }
   const tree = await buildTreeLevel(dirHandle);
   return { handle: dirHandle, tree, name: dirHandle.name };
+}
+
+// ── Public: open a local filesystem path as a workspace (server-backed) ──
+//
+// Uses the backend clone-server to read the directory tree, bypassing
+// the File System Access API folder picker.  Used by the clone modal's
+// "open" button to directly open a freshly-cloned repo as a space.
+//
+// Tree nodes carry a `serverPath` (absolute disk path) instead of a
+// `handle`.  File reading goes through /api/read-file.
+
+export async function openPathAsSpace(destPath) {
+  const r = await fetch(`/api/read-tree?path=${encodeURIComponent(destPath)}`);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || '无法读取目录');
+  }
+  const { name, children } = await r.json();
+  const tree = children.map((c) => ({
+    id: c.name,
+    name: c.name,
+    kind: c.kind,
+    path: c.name,
+    handle: null,
+    serverPath: c.path,
+    file: null,
+    children: c.kind === 'directory' ? null : null,
+  }));
+  return { tree, name, serverRoot: destPath };
 }
 
 // ── Public: rebuild tree from an existing root handle ──────
@@ -273,6 +329,17 @@ export async function selectAndBuildTree() {
 
 export async function getFileObject(fileNode) {
   if (!fileNode) throw new Error('Invalid file node');
+
+  // Server-backed file (cloned repo opened without File System Access API)
+  if (fileNode.serverPath && !fileNode.handle) {
+    const r = await fetch(`/api/read-file?path=${encodeURIComponent(fileNode.serverPath)}`);
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || '无法读取文件');
+    }
+    const blob = await r.blob();
+    return new File([blob], fileNode.name, { type: blob.type });
+  }
 
   if (fileNode.handle) {
     const file = await fileNode.handle.getFile();
