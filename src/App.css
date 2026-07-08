@@ -471,7 +471,7 @@ body {
 
 /* ── NavMenu (shared by sidebar) ─────────────────────────── */
 .nav-menu {
-  padding: 6px;
+  padding: 6px 0;
 }
 
 .nav-item-wrapper {
@@ -482,6 +482,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  margin: 0 6px;
   padding: 4px 6px;
   border-radius: var(--radius-sm);
   font-size: var(--font-size);
