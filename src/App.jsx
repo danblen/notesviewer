@@ -40,7 +40,8 @@ function loadNum(key, fallback, min, max) {
 
 function loadLayout() {
   const v = localStorage.getItem(LS_LAYOUT);
-  return v === 'left-only' ? 'left-only' : 'top-left';
+  const valid = ['left-right', 'top-left', 'left-only'];
+  return valid.includes(v) ? v : 'left-right';
 }
 
 export default function App() {
@@ -72,7 +73,8 @@ export default function App() {
 
   const toggleLayout = useCallback(() => {
     setLayoutMode(prev => {
-      const next = prev === 'top-left' ? 'left-only' : 'top-left';
+      const order = ['left-right', 'top-left', 'left-only'];
+      const next = order[(order.indexOf(prev) + 1) % order.length];
       localStorage.setItem(LS_LAYOUT, next);
       return next;
     });
