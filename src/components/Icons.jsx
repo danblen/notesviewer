@@ -290,3 +290,12 @@ export function LayoutIcon({ size = 14, className = '' }) {
     </svg>
   );
 }
+
+/** Check / tick — used for the active item in the layout dropdown */
+export function CheckIcon({ size = 12, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none" className={className}>
+      <path d="M2.5 6.2 L5 8.6 L9.5 3.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

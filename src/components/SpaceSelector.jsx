@@ -1,7 +1,11 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { FolderIcon, FolderOpenIcon, ChevronRight, SpacesIcon, PlusIcon, MoreIcon, TrashIcon, DownloadIcon } from './Icons';
 
-export default function SpaceSelector({ rootName, loading, recentSpaces, activeSpaceId, onSelectDirectory, onSwitchSpace, onDeleteSpace, onCloneGithub }) {
+export default function SpaceSelector({
+  rootName, loading, recentSpaces, activeSpaceId,
+  onSelectDirectory, onSwitchSpace, onDeleteSpace, onCloneGithub,
+  dropdownGroup, dropdownId = 'spaces',
+}) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const closeTimer = useRef(null);
@@ -14,33 +18,55 @@ export default function SpaceSelector({ rootName, loading, recentSpaces, activeS
 
   const activeSpace = recentSpaces.find(s => s.id === activeSpaceId);
 
+  // Mutual exclusion: close when another dropdown in the group opens
+  useEffect(() => {
+    if (!dropdownGroup) return;
+    return dropdownGroup.subscribe((activeId) => {
+      if (activeId && activeId !== dropdownId) {
+        clearTimeout(closeTimer.current);
+        setOpen(false);
+      }
+    });
+  }, [dropdownGroup, dropdownId]);
+
   // ── Switcher hover ──
   const handleEnter = useCallback((e) => {
     clearTimeout(closeTimer.current);
+    if (dropdownGroup) dropdownGroup.acquire(dropdownId);
     const rect = e.currentTarget.getBoundingClientRect();
     setPos({ top: rect.bottom + 4, left: rect.left });
     setOpen(true);
-  }, []);
+  }, [dropdownGroup, dropdownId]);
 
   const handleLeave = useCallback(() => {
     clearTimeout(switchTimer.current);
-    closeTimer.current = setTimeout(() => setOpen(false), 300);
-  }, []);
+    closeTimer.current = setTimeout(() => {
+      setOpen(false);
+      if (dropdownGroup) dropdownGroup.release(dropdownId);
+    }, 300);
+  }, [dropdownGroup, dropdownId]);
 
   const handleDropdownEnter = useCallback(() => clearTimeout(closeTimer.current), []);
   const handleDropdownLeave = useCallback(() => {
     clearTimeout(switchTimer.current);
     if (spaceConfirm) return;
-    closeTimer.current = setTimeout(() => setOpen(false), 300);
-  }, [spaceConfirm]);
+    closeTimer.current = setTimeout(() => {
+      setOpen(false);
+      if (dropdownGroup) dropdownGroup.release(dropdownId);
+    }, 300);
+  }, [spaceConfirm, dropdownGroup, dropdownId]);
 
   // ── Space hover → switch ──
   const handleSpaceHover = useCallback((spaceId) => {
     if (spaceMore || spaceConfirm) return;
     clearTimeout(switchTimer.current);
     if (spaceId === activeSpaceId) return;
-    switchTimer.current = setTimeout(() => { onSwitchSpace(spaceId); setOpen(false); }, 300);
-  }, [onSwitchSpace, activeSpaceId, spaceMore, spaceConfirm]);
+    switchTimer.current = setTimeout(() => {
+      onSwitchSpace(spaceId);
+      setOpen(false);
+      if (dropdownGroup) dropdownGroup.release(dropdownId);
+    }, 300);
+  }, [onSwitchSpace, activeSpaceId, spaceMore, spaceConfirm, dropdownGroup, dropdownId]);
 
   const handleSpaceLeave = useCallback(() => clearTimeout(switchTimer.current), []);
 
@@ -91,14 +117,16 @@ export default function SpaceSelector({ rootName, loading, recentSpaces, activeS
     if (loading) return;
     clearTimeout(switchTimer.current);
     setOpen(false);
+    if (dropdownGroup) dropdownGroup.release(dropdownId);
     onSelectDirectory();
-  }, [loading, onSelectDirectory]);
+  }, [loading, onSelectDirectory, dropdownGroup, dropdownId]);
 
   const handleClone = useCallback(() => {
     clearTimeout(switchTimer.current);
     setOpen(false);
+    if (dropdownGroup) dropdownGroup.release(dropdownId);
     onCloneGithub();
-  }, [onCloneGithub]);
+  }, [onCloneGithub, dropdownGroup, dropdownId]);
 
   return (
     <>

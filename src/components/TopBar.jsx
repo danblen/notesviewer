@@ -15,7 +15,7 @@ export default function TopBar({
   recentSpaces, activeSpaceId,
   onSelectDirectory, onFileHover, onFileLeave, onLevel2Hover,
   onSwitchSpace, onDeleteSpace, onCloneGithub, onLoadChildren,
-  layoutMode, onToggleLayout,
+  layoutMode, onChangeLayout, dropdownGroup,
 }) {
   const [hoveredL1Id, setHoveredL1Id] = useState(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
@@ -78,7 +78,7 @@ export default function TopBar({
   // ── Render ──
   return (
     <header className="topbar">
-      <LayoutToggle layoutMode={layoutMode} onToggleLayout={onToggleLayout} />
+      <LayoutToggle layoutMode={layoutMode} onChangeLayout={onChangeLayout} dropdownGroup={dropdownGroup} />
       <SpaceSelector
         rootName={rootName}
         loading={loading}
@@ -88,6 +88,7 @@ export default function TopBar({
         onSwitchSpace={onSwitchSpace}
         onDeleteSpace={onDeleteSpace}
         onCloneGithub={onCloneGithub}
+        dropdownGroup={dropdownGroup}
       />
 
       <nav className="topbar-right">

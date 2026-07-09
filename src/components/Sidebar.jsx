@@ -23,9 +23,11 @@ function SidebarInner({
   items, onFileHover, onFileLeave, currentFileId, width, folder,
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
   onOpenAsWorkspace, revealPath,
-  layoutMode, onToggleLayout,
+  layoutMode, onChangeLayout,
+  isOpen,
   rootName, loading, recentSpaces, activeSpaceId,
   onSelectDirectory, onSwitchSpace, onDeleteSpace, onCloneGithub,
+  dropdownGroup,
 }) {
   // More-menu (⋯) state
   const [moreMenu, setMoreMenu] = useState(null);      // { pos }
@@ -185,11 +187,14 @@ function SidebarInner({
   const isSidebarHeaderMode = layoutMode !== 'top-left';
 
   return (
-    <aside className="sidebar" style={{ width }}>
-      {/* Left-only / left-right mode: header with layout toggle + space switcher */}
+    <aside
+      className={`sidebar ${layoutMode === 'auto-hide' ? 'auto-hide' : ''} ${isOpen ? 'is-open' : ''}`}
+      style={{ width }}
+    >
+      {/* Left-only / left-right / auto-hide mode: header with layout toggle + space switcher */}
       {isSidebarHeaderMode && (
         <div className="sidebar-left-header">
-          <LayoutToggle layoutMode={layoutMode} onToggleLayout={onToggleLayout} />
+          <LayoutToggle layoutMode={layoutMode} onChangeLayout={onChangeLayout} dropdownGroup={dropdownGroup} />
           <div className="sidebar-space-wrap">
             <SpaceSelector
               rootName={rootName}
@@ -200,6 +205,7 @@ function SidebarInner({
               onSwitchSpace={onSwitchSpace}
               onDeleteSpace={onDeleteSpace}
               onCloneGithub={onCloneGithub}
+              dropdownGroup={dropdownGroup}
             />
           </div>
         </div>

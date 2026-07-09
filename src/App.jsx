@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import ContentArea from './components/ContentArea';
 import CloneModal from './components/CloneModal';
 import SearchPanel from './components/SearchPanel';
+import { useDropdownGroup } from './hooks/useDropdownGroup';
 import {
   selectAndBuildTree,
   getFileType,
@@ -42,7 +43,7 @@ function loadNum(key, fallback, min, max) {
 
 function loadLayout() {
   const v = localStorage.getItem(LS_LAYOUT);
-  const valid = ['left-right', 'top-left', 'left-only'];
+  const valid = ['top-left', 'left-only', 'auto-hide'];
   return valid.includes(v) ? v : 'top-left';
 }
 
@@ -75,14 +76,37 @@ export default function App() {
     loadNum(LS_CONTENT_W, 860, CONTENT_MIN, CONTENT_MAX));
   const [layoutMode, setLayoutMode] = useState(loadLayout);
 
-  const toggleLayout = useCallback(() => {
-    setLayoutMode(prev => {
-      const order = ['left-right', 'top-left', 'left-only'];
-      const next = order[(order.indexOf(prev) + 1) % order.length];
-      localStorage.setItem(LS_LAYOUT, next);
-      return next;
-    });
+  const changeLayoutMode = useCallback((mode) => {
+    setLayoutMode(mode);
+    localStorage.setItem(LS_LAYOUT, mode);
   }, []);
+
+  // ── Auto-hide sidebar state ─────────────────────────────
+  // Only relevant when layoutMode === 'auto-hide'.
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const sidebarHideTimer = useRef(null);
+  const HIDE_DELAY = 250;
+
+  // Shared store so layout dropdown and spaces dropdown are mutually exclusive
+  const dropdownGroup = useDropdownGroup();
+
+  const openSidebar = useCallback(() => {
+    clearTimeout(sidebarHideTimer.current);
+    setSidebarOpen(true);
+  }, []);
+  const scheduleHide = useCallback(() => {
+    clearTimeout(sidebarHideTimer.current);
+    sidebarHideTimer.current = setTimeout(() => setSidebarOpen(false), HIDE_DELAY);
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(sidebarHideTimer.current);
+    if (layoutMode === 'auto-hide') {
+      setSidebarOpen(false);
+    } else {
+      setSidebarOpen(true);
+    }
+  }, [layoutMode]);
 
   const fileOpenTimerRef = useRef(null);
   const currentFileIdRef = useRef(null);
@@ -564,6 +588,7 @@ export default function App() {
   }, [sidebarWidth]);
 
   // ── Render ───────────────────────────────────────────────
+  const isAutoHide = layoutMode === 'auto-hide';
   return (
     <div className="app">
       {layoutMode === 'top-left' && (
@@ -583,41 +608,54 @@ export default function App() {
         onCloneGithub={openClone}
           onLoadChildren={loadChildrenForNode}
           layoutMode={layoutMode}
-          onToggleLayout={toggleLayout}
+          onChangeLayout={changeLayoutMode}
+          dropdownGroup={dropdownGroup}
         />
       )}
       <div className="app-body">
-        <Sidebar
-          items={layoutMode === 'top-left' ? sidebarItems : fileTree}
-          folder={layoutMode === 'top-left' ? sidebarFolder : null}
-          width={sidebarWidth}
-          currentFileId={currentFileId}
-          layoutMode={layoutMode}
-          onToggleLayout={toggleLayout}
-          rootName={rootName}
-          loading={loading}
-          recentSpaces={recentSpaces}
-          activeSpaceId={activeSpaceId}
-          onSelectDirectory={handleSelectDirectory}
-          onSwitchSpace={handleSwitchSpace}
-          onDeleteSpace={handleDeleteSpace}
-          onCloneGithub={openClone}
-          onFileHover={handleFileHover}
-          onFileLeave={handleFileLeave}
-          onDeleteEntry={handleDeleteEntry}
-          onCreateFile={handleCreateFile}
-          onCreateFolder={handleCreateFolder}
-          onRenameEntry={handleRenameEntry}
-          onLoadChildren={loadChildrenForNode}
-          onOpenAsWorkspace={handleOpenAsWorkspace}
-          revealPath={revealPath}
-        />
         <div
-          className="resizer sidebar-resizer"
-          style={{ left: sidebarWidth }}
-          onMouseDown={onSidebarResizeStart}
-          title="拖动调整侧边栏宽度"
-        />
+          className={`sidebar-hover-group ${isAutoHide ? 'auto-hide' : ''} ${isAutoHide && sidebarOpen ? 'is-open' : ''}`}
+          style={isAutoHide ? { '--sidebar-width': `${sidebarWidth}px` } : undefined}
+          onMouseEnter={isAutoHide ? openSidebar : undefined}
+          onMouseLeave={isAutoHide ? scheduleHide : undefined}
+        >
+          {isAutoHide && <div className="sidebar-hover-zone" aria-hidden />}
+          <Sidebar
+            items={layoutMode === 'top-left' ? sidebarItems : fileTree}
+            folder={layoutMode === 'top-left' ? sidebarFolder : null}
+            width={sidebarWidth}
+            currentFileId={currentFileId}
+            layoutMode={layoutMode}
+            onChangeLayout={changeLayoutMode}
+            isOpen={sidebarOpen}
+            rootName={rootName}
+            loading={loading}
+            recentSpaces={recentSpaces}
+            activeSpaceId={activeSpaceId}
+            onSelectDirectory={handleSelectDirectory}
+            onSwitchSpace={handleSwitchSpace}
+            onDeleteSpace={handleDeleteSpace}
+            onCloneGithub={openClone}
+            onFileHover={handleFileHover}
+            onFileLeave={handleFileLeave}
+            onDeleteEntry={handleDeleteEntry}
+            onCreateFile={handleCreateFile}
+            onCreateFolder={handleCreateFolder}
+            onRenameEntry={handleRenameEntry}
+            onLoadChildren={loadChildrenForNode}
+            onOpenAsWorkspace={handleOpenAsWorkspace}
+            revealPath={revealPath}
+            dropdownGroup={dropdownGroup}
+          />
+        </div>
+        {!isAutoHide && (
+          <div
+            className="resizer sidebar-resizer"
+            style={{ left: sidebarWidth }}
+            onMouseDown={onSidebarResizeStart}
+            title="拖动调整侧边栏宽度"
+          />
+        )}
         <ContentArea
           file={currentFile}
           contentMaxWidth={contentMaxWidth}

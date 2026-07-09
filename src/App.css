@@ -16,7 +16,7 @@
   --color-accent:       #0071e3;
   --color-accent-light: #eef4ff;
 
-  --topbar-height: 48px;
+  --topbar-height: 44px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", "Menlo", monospace;
@@ -81,28 +81,54 @@ body {
 /* (directory opener now lives inside the spaces dropdown — see .space-action) */
 
 /*
-── Layout toggle button (topbar far left) ──────────────── */
-.layout-toggle-btn {
+── Layout switcher (hover-to-open dropdown, matches spaces-switcher style) */
+.layout-switcher {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid transparent;
+  gap: 5px;
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-3);
-  cursor: pointer;
-  transition: background .12s, color .12s, border-color .12s;
-  padding: 0;
+  color: var(--color-text-2);
+  font-size: var(--font-size);
+  white-space: nowrap;
+  cursor: default;
   flex-shrink: 0;
   margin-right: 4px;
+  border: 1px solid transparent;
+  transition: background .12s, color .12s, border-color .12s;
 }
-.layout-toggle-btn:hover {
+.layout-switcher:hover,
+.layout-switcher.open {
   background: var(--color-bg-hover);
   color: var(--color-text);
   border-color: var(--color-border);
 }
+.layout-chevron {
+  color: var(--color-text-3);
+  transition: transform .15s ease;
+}
+.layout-switcher.open .layout-chevron {
+  transform: rotate(90deg);
+}
+
+/* Layout dropdown — reuses .spaces-dropdown base for visual parity */
+.layout-dropdown { min-width: 180px; max-width: 220px; padding: 4px; }
+.layout-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--font-size);
+  cursor: pointer;
+  transition: background .1s;
+}
+.layout-dropdown-item:hover { background: var(--color-bg-hover); }
+.layout-dropdown-item.active { color: var(--color-accent); }
+.layout-dropdown-item.active .layout-dropdown-label { font-weight: 500; }
+.layout-dropdown-label { flex: 1; }
+.layout-dropdown-item .check-icon { color: var(--color-accent); }
 
 /* ── Left-only sidebar header ────────────────────────────── */
 .sidebar-left-header {
@@ -188,11 +214,12 @@ body {
   box-shadow: var(--shadow-md);
   padding: 4px;
   z-index: 200;
-  animation: dropdown-in .12s ease-out;
+  transform-origin: top left;
+  animation: dropdown-in .14s ease-out;
 }
 @keyframes dropdown-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .l2-item {
@@ -301,7 +328,8 @@ body {
   box-shadow: var(--shadow-md);
   padding: 4px;
   z-index: 200;
-  animation: dropdown-in .12s ease-out;
+  transform-origin: top left;
+  animation: dropdown-in .14s ease-out;
 }
 .space-item {
   display: flex;
@@ -413,11 +441,58 @@ body {
 .sidebar {
   flex-shrink: 0;
   background: var(--color-bg);
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border-light);
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
   z-index: 90;
+  height: 100%;
+}
+
+/* ── Auto-hide sidebar ─────────────────────────────────────
+   The hover group hosts the invisible 5px edge zone + the
+   sidebar. In auto-hide mode the sidebar participates in the
+   flex layout — when "open" the content shifts right by the
+   sidebar's width, when "closed" the group collapses to 0 and
+   the content fills the viewport. The hover zone is a fixed
+   overlay so it's always reachable at the left edge. */
+.sidebar-hover-group {
+  display: flex;
+  flex-shrink: 0;
+  position: relative;
+  height: 100%;
+  transition: width .22s ease-out;
+}
+.sidebar-hover-group.auto-hide:not(.is-open) {
+  width: 0;
+}
+.sidebar-hover-zone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100vh;
+  z-index: 89;
+}
+/* When closed: the sidebar's width still gets rendered (the
+   inline style sets it), but a negative margin pulls it out
+   of the flex measurement so the group stays 0-wide. */
+.sidebar-hover-group.auto-hide:not(.is-open) .sidebar {
+  margin-left: calc(-1 * var(--sidebar-width, 260px));
+  border-right-color: transparent;
+  box-shadow: none;
+  opacity: 0;
+}
+/* When open: let the sidebar take its natural width — the
+   group expands with it, pushing the content right. */
+.sidebar-hover-group.auto-hide.is-open .sidebar {
+  margin-left: 0;
+  border-right: 1px solid var(--color-border-light);
+  opacity: 1;
+}
+/* Smooth the sidebar's own properties (margin + opacity). */
+.sidebar-hover-group.auto-hide .sidebar {
+  transition: margin-left .22s ease-out, opacity .18s ease-out, border-color .12s, box-shadow .12s;
 }
 
 .sidebar-empty {
