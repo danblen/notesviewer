@@ -71,7 +71,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px 0 12px;
+  padding: 0 12px 0 8px; /* left padding matches .sidebar-left-header for jump-free layout switching */
   background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -145,9 +145,6 @@ body {
 }
 .sidebar-space-wrap {
   min-width: 0;
-}
-.sidebar-space-wrap .spaces-switcher {
-  margin-left: 0;
 }
 
 /* Level-1 items (right side of topbar, left-aligned within section) */
@@ -293,7 +290,7 @@ body {
   white-space: nowrap;
   cursor: default;
   flex-shrink: 0;
-  margin-left: 8px;
+  margin-left: 0; /* gap to layout-switcher is controlled by .layout-switcher margin-right (unified across layouts) */
   border: 1px solid transparent;
   transition: background .12s, color .12s, border-color .12s;
 }
