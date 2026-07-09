@@ -463,6 +463,9 @@ body {
 .sidebar-hover-group.auto-hide:not(.is-open) {
   width: 0;
 }
+.sidebar-hover-group.auto-hide.is-open {
+  width: var(--sidebar-width);
+}
 .sidebar-hover-zone {
   position: fixed;
   top: 0;
