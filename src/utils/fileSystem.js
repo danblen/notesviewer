@@ -182,8 +182,13 @@ export function setChildrenInTree(tree, targetPath, children) {
   if (targetPath === '') return children;
   return tree.map(node => {
     if (node.path === targetPath) return { ...node, children };
-    if (node.children && targetPath.startsWith(node.path + '/'))
-      return { ...node, children: setChildrenInTree(node.children, targetPath, children) };
+    // Check if target is under this node — even if children is null (unloaded intermediate)
+    if (node.kind === 'directory' && targetPath.startsWith(node.path + '/')) {
+      if (node.children) {
+        return { ...node, children: setChildrenInTree(node.children, targetPath, children) };
+      }
+      // children is null (not yet loaded) — cannot recurse; return as-is
+    }
     return node;
   });
 }

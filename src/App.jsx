@@ -1,10 +1,11 @@
 import { LayoutIcon, SearchIcon } from './components/Icons';
-import { useState, useRef, useCallback, useEffect, memo } from 'react';
+import { useState, useRef, useCallback, useEffect, memo, Component } from 'react';
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
 import ContentArea from './components/ContentArea';
 import CloneModal from './components/CloneModal';
 import SearchPanel from './components/SearchPanel';
+import GitDiffPanel from './components/GitDiffPanel';
 import { useDropdownGroup } from './hooks/useDropdownGroup';
 import {
   selectAndBuildTree,
@@ -28,12 +29,22 @@ import {
   openFolderAsWorkspace,
   openPathAsSpace,
 } from './utils/fileSystem';
+import {
+  isGitRepoFsa,
+  isGitRepoServer,
+  getGitStatusFsa,
+  getGitStatusServer,
+  getFileDiffFsa,
+  getFileDiffServer,
+} from './utils/gitUtils';
 
 const LS_SIDEBAR_W = 'nv_sidebar_width';
 const LS_CONTENT_W = 'nv_content_width';
 const LS_LAYOUT = 'nv_layout';
+const LS_GIT_PANEL_W = 'nv_git_panel_width';
 const SIDEBAR_MIN = 180, SIDEBAR_MAX = 520;
 const CONTENT_MIN = 400, CONTENT_MAX = 1800;
+const GIT_PANEL_MIN = 320, GIT_PANEL_MAX = 700;
 
 function loadNum(key, fallback, min, max) {
   const v = Number(localStorage.getItem(key));
@@ -45,6 +56,38 @@ function loadLayout() {
   const v = localStorage.getItem(LS_LAYOUT);
   const valid = ['top-left', 'left-only', 'auto-hide'];
   return valid.includes(v) ? v : 'top-left';
+}
+
+// ── Error boundary: prevents GitDiffPanel (or any child) render errors ──
+// from crashing the entire app. Shows a fallback message instead.
+class PanelErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[GitDiffPanel] render error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 16, fontSize: 13, color: '#888', textAlign: 'center' }}>
+          Git 面板渲染出错
+          <br />
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{ marginTop: 8, cursor: 'pointer', color: '#007aff', background: 'none', border: 'none', fontSize: 13 }}
+          >
+            重试
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -75,6 +118,25 @@ export default function App() {
   const [contentMaxWidth, setContentMaxWidth] = useState(() =>
     loadNum(LS_CONTENT_W, 860, CONTENT_MIN, CONTENT_MAX));
   const [layoutMode, setLayoutMode] = useState(loadLayout);
+
+  // ── Git diff panel state ─────────────────────────────────
+  const [isGitRepo, setIsGitRepo] = useState(false);
+  const [gitPanelOpen, setGitPanelOpen] = useState(false);
+  const [gitChanges, setGitChanges] = useState([]);
+  const [gitBranch, setGitBranch] = useState('HEAD');
+  const [gitLoading, setGitLoading] = useState(false);
+  const [gitError, setGitError] = useState(null);
+  const [hoveredGitFile, setHoveredGitFile] = useState(null);
+  const [diffData, setDiffData] = useState(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState(null);
+  const [gitPanelWidth, setGitPanelWidth] = useState(() =>
+    loadNum(LS_GIT_PANEL_W, 440, GIT_PANEL_MIN, GIT_PANEL_MAX));
+
+  // Refs for caching git data between status call and diff calls
+  const gitHeadTreeMapRef = useRef(null);
+  const gitFsRef = useRef(null);
+  const gitHoverTimerRef = useRef(null);
 
   const changeLayoutMode = useCallback((mode) => {
     setLayoutMode(mode);
@@ -152,6 +214,163 @@ export default function App() {
   // Persist widths
   useEffect(() => { localStorage.setItem(LS_SIDEBAR_W, String(sidebarWidth)); }, [sidebarWidth]);
   useEffect(() => { localStorage.setItem(LS_CONTENT_W, String(contentMaxWidth)); }, [contentMaxWidth]);
+  useEffect(() => { localStorage.setItem(LS_GIT_PANEL_W, String(gitPanelWidth)); }, [gitPanelWidth]);
+
+  // ── Git: load status (changed files + branch) ────────────
+  const loadGitStatus = useCallback(async () => {
+    setGitLoading(true);
+    setGitError(null);
+    setHoveredGitFile(null);
+    setDiffData(null);
+    try {
+      if (rootHandleRef.current) {
+        const result = await getGitStatusFsa(rootHandleRef.current);
+        gitHeadTreeMapRef.current = result.headTreeMap;
+        gitFsRef.current = result.fs;
+        setGitChanges(result.changes);
+        setGitBranch(result.branch);
+      } else if (serverRootRef.current) {
+        const result = await getGitStatusServer(serverRootRef.current);
+        gitHeadTreeMapRef.current = null;
+        gitFsRef.current = null;
+        setGitChanges(result.changes);
+        setGitBranch(result.branch);
+      } else {
+        // No handle and no server root — can't load git status
+        setGitChanges([]);
+        setGitBranch('HEAD');
+      }
+    } catch (err) {
+      setGitError(err.message || String(err));
+    } finally {
+      setGitLoading(false);
+    }
+  }, []);
+
+  // ── Git: detect repo when space changes ──────────────────
+  useEffect(() => {
+    let cancelled = false;
+    async function detectGit() {
+      // Reset git state
+      setIsGitRepo(false);
+      setGitPanelOpen(false);
+      setGitChanges([]);
+      setHoveredGitFile(null);
+      setDiffData(null);
+      gitHeadTreeMapRef.current = null;
+      gitFsRef.current = null;
+
+      const handle = rootHandleRef.current;
+      const serverRoot = serverRootRef.current;
+      const tree = fileTreeRef.current;
+
+      // Fallback: check file tree for .git entry (works even without a handle)
+      const hasGitInTree = Array.isArray(tree) && tree.some(n => n.name === '.git');
+
+      if (handle) {
+        let isGit = await isGitRepoFsa(handle);
+        // If handle check fails, fall back to tree inspection
+        if (!isGit && hasGitInTree) isGit = true;
+        if (!cancelled && isGit) {
+          setIsGitRepo(true);
+          setGitPanelOpen(true);
+          loadGitStatus();
+        }
+      } else if (serverRoot) {
+        const isGit = await isGitRepoServer(serverRoot);
+        if (!cancelled && isGit) {
+          setIsGitRepo(true);
+          setGitPanelOpen(true);
+          loadGitStatus();
+        }
+      } else if (hasGitInTree) {
+        // webkitdirectory fallback — no handle, but .git exists in tree.
+        // We can't run isomorphic-git without an FSA handle, but we CAN
+        // try the server backend if the tree nodes carry serverPath.
+        // Otherwise, show the panel with an informative message.
+        const hasServerPath = Array.isArray(tree) && tree.some(n => n.serverPath);
+        if (hasServerPath) {
+          // Server-backed tree — extract serverRoot from first node's serverPath
+          const firstNode = tree.find(n => n.serverPath);
+          if (firstNode) {
+            const root = firstNode.serverPath.replace(/\/[^/]+$/, '');
+            serverRootRef.current = root;
+            const isGit = await isGitRepoServer(root);
+            if (!cancelled && isGit) {
+              setIsGitRepo(true);
+              setGitPanelOpen(true);
+              loadGitStatus();
+            }
+          }
+        } else {
+          // Pure webkitdirectory — no server backend, no FSA handle.
+          // Show panel with a message that git diff needs Chrome/Edge.
+          setIsGitRepo(true);
+          setGitPanelOpen(true);
+          setGitError('当前浏览器不支持 Git diff 功能，请使用 Chrome 或 Edge 浏览器以获取完整体验。');
+          setGitLoading(false);
+        }
+      }
+    }
+    detectGit();
+    return () => { cancelled = true; };
+  }, [rootName, loadGitStatus]);
+
+  // ── Git: hover a file in the change tree → load diff ─────
+  const handleGitFileHover = useCallback((fileNode) => {
+    clearTimeout(gitHoverTimerRef.current);
+    gitHoverTimerRef.current = setTimeout(async () => {
+      setHoveredGitFile(fileNode);
+      setDiffLoading(true);
+      setDiffError(null);
+      try {
+        let result;
+        if (rootHandleRef.current) {
+          result = await getFileDiffFsa(
+            rootHandleRef.current,
+            fileNode.path,
+            gitHeadTreeMapRef.current,
+            gitFsRef.current,
+            fileNode.status
+          );
+        } else if (serverRootRef.current) {
+          result = await getFileDiffServer(
+            serverRootRef.current, fileNode.path, fileNode.status
+          );
+        }
+        if (result) setDiffData(result);
+      } catch (err) {
+        setDiffError(err.message || String(err));
+      } finally {
+        setDiffLoading(false);
+      }
+    }, 200);
+  }, []);
+
+  const handleGitFileLeave = useCallback(() => {
+    clearTimeout(gitHoverTimerRef.current);
+  }, []);
+
+  // ── Git panel resize (drag left = wider) ─────────────────
+  const onGitResizeStart = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = gitPanelWidth;
+    const onMove = (ev) => {
+      const w = Math.min(GIT_PANEL_MAX, Math.max(GIT_PANEL_MIN, startW - (ev.clientX - startX)));
+      setGitPanelWidth(w);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [gitPanelWidth]);
 
   // ── Boot: load recent spaces + silently restore last active ──
   useEffect(() => {
@@ -293,8 +512,14 @@ export default function App() {
       return children;
     }
     const dirNode = findNodeByPath(fileTreeRef.current, dirPath);
-    if (!dirNode || !dirNode.handle) return [];
+    if (!dirNode) return [];
+    // Support both FSA nodes (handle) and server-backed nodes (serverPath)
+    if (!dirNode.handle && !dirNode.serverPath) return [];
     const children = await loadChildren(dirNode);
+    // Preserve parentHandle on children for file operations (delete/create/rename)
+    if (dirNode.handle) {
+      children.forEach(ch => { ch.parentHandle = dirNode.handle; });
+    }
     setFileTree(prev => setChildrenInTree(prev, dirPath, children));
     return children;
   }, []);
@@ -306,9 +531,17 @@ export default function App() {
     if (node.kind !== 'directory' || node.children !== null) return;
     try {
       const children = await loadChildren(node);
+      // Preserve parentHandle on children for file operations
+      if (node.handle) {
+        children.forEach(ch => { ch.parentHandle = node.handle; });
+      }
       const preloaded = await Promise.all(children.map(async (ch) => {
         if (ch.kind === 'directory') {
           const sub = await loadChildren(ch).catch(() => []);
+          // Preserve parentHandle on grandchildren too
+          if (ch.handle) {
+            sub.forEach(gch => { gch.parentHandle = ch.handle; });
+          }
           return { ...ch, children: sub };
         }
         return ch;
@@ -663,6 +896,51 @@ export default function App() {
           onDirtyChange={handleDirtyChange}
           scrollTarget={scrollTarget}
         />
+        {/* Git diff panel — auto-opens for git repos, resizable */}
+        {isGitRepo && gitPanelOpen && (
+          <>
+            <div
+              className="resizer git-panel-resizer"
+              onMouseDown={onGitResizeStart}
+              title="拖动调整面板宽度"
+            />
+            <PanelErrorBoundary>
+              <GitDiffPanel
+                changes={gitChanges}
+                branch={gitBranch}
+                loading={gitLoading}
+                error={gitError}
+                onRefresh={loadGitStatus}
+                onFileHover={handleGitFileHover}
+                onFileLeave={handleGitFileLeave}
+                hoveredFile={hoveredGitFile}
+                diffData={diffData}
+                diffLoading={diffLoading}
+                diffError={diffError}
+                onClose={() => setGitPanelOpen(false)}
+                width={gitPanelWidth}
+              />
+            </PanelErrorBoundary>
+          </>
+        )}
+        {/* Git trigger strip — visible when repo detected and panel closed */}
+        {isGitRepo && !gitPanelOpen && (
+          <div
+            className="git-trigger"
+            onClick={() => { setGitPanelOpen(true); loadGitStatus(); }}
+            title="Git 更改"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="git-trigger-icon">
+              <circle cx="4" cy="3.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+              <circle cx="4" cy="12.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+              <circle cx="12" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+              <path d="M4 5v6M4 8c0-2 8-2 8-4.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
+            </svg>
+            {gitChanges.length > 0 && (
+              <span className="git-trigger-badge">{gitChanges.length}</span>
+            )}
+          </div>
+        )}
         {/* Search trigger — hover to open, click to close */}
         <div
           className={`search-trigger ${searchOpen ? 'open' : ''}`}

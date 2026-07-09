@@ -38,6 +38,13 @@ function NavMenuInner({
   const expandLoadingRef = useRef(new Set());
   const toggleTimerRef = useRef(null);
 
+  // Reset loading tracking when items change (prevents stale IDs from blocking re-loads)
+  const prevItemsRef = useRef(items);
+  if (prevItemsRef.current !== items) {
+    prevItemsRef.current = items;
+    expandLoadingRef.current = new Set();
+  }
+
   // More-menu (⋯) state
   const [moreMenu, setMoreMenu] = useState(null);      // { item, pos }
   const [confirmDelete, setConfirmDelete] = useState(null); // { item }
