@@ -241,6 +241,8 @@ const server = http.createServer((req, res) => {
     if (url.startsWith('/api/search-github') && req.method === 'GET') return handleSearchGithub(req, res, url);
     if (url.startsWith('/api/read-tree') && req.method === 'GET') return handleReadTree(res, url);
     if (url.startsWith('/api/read-file') && req.method === 'GET') return handleReadFile(res, url);
+    if (url.startsWith('/api/git-status') && req.method === 'GET') return handleGitStatus(res, url);
+    if (url.startsWith('/api/git-diff') && req.method === 'GET') return handleGitDiff(res, url);
     sendJSON(res, 404, { error: 'Not found' });
   } catch (err) {
     console.error('[clone-server] unhandled:', err);
@@ -370,4 +372,145 @@ function handleReadFile(res, url) {
   } catch (err) {
     sendJSON(res, 400, { error: `无法读取文件: ${err.message}` });
   }
+}
+
+// ============================================================
+// Git endpoints — used by server-backed (cloned repo) spaces
+// ============================================================
+
+/** Run a git command in `repoPath` and return { stdout, stderr, code }. */
+function runGit(repoPath, args) {
+  return new Promise((resolve) => {
+    execFile('git', ['-C', repoPath, ...args], {
+      encoding: 'utf-8',
+      timeout: 15000,
+      maxBuffer: 10 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    }, (err, stdout, stderr) => {
+      if (err) {
+        resolve({ stdout: stdout || '', stderr: stderr || err.message, code: err.code || 1 });
+      } else {
+        resolve({ stdout, stderr, code: 0 });
+      }
+    });
+  });
+}
+
+/** GET /api/git-status?path=<absPath>
+ *  Returns { isRepo, branch, changes: [{ path, status }] }
+ *  Uses `git status --porcelain=v1` for the change list.
+ */
+async function handleGitStatus(res, url) {
+  const params = new URL(url, 'http://localhost').searchParams;
+  const repoPath = params.get('path');
+  if (!repoPath) { sendJSON(res, 400, { error: '缺少 path 参数' }); return; }
+
+  // Verify it's a directory
+  try {
+    if (!fs.statSync(repoPath).isDirectory()) {
+      sendJSON(res, 400, { error: '路径不是目录' });
+      return;
+    }
+  } catch {
+    sendJSON(res, 400, { error: '路径不存在' });
+    return;
+  }
+
+  // Check if it's a git repo
+  const revParse = await runGit(repoPath, ['rev-parse', '--is-inside-work-tree']);
+  if (revParse.code !== 0 || revParse.stdout.trim() !== 'true') {
+    sendJSON(res, 200, { isRepo: false, branch: null, changes: [] });
+    return;
+  }
+
+  // Get branch name
+  const branchRes = await runGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const branch = branchRes.code === 0 ? branchRes.stdout.trim() : 'HEAD';
+
+  // Get porcelain status
+  const statusRes = await runGit(repoPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+  if (statusRes.code !== 0) {
+    sendJSON(res, 200, { isRepo: true, branch, changes: [] });
+    return;
+  }
+
+  // Parse porcelain -z output (null-separated entries)
+  // Each entry: "XY filename" or "XY filename\0oldname -> newname" for renames
+  const changes = [];
+  const entries = statusRes.stdout.split('\0').filter((e) => e.length > 0);
+  for (let entry of entries) {
+    if (entry.length < 3) continue;
+    const x = entry[0]; // staged status
+    const y = entry[1]; // workdir status
+    let filename = entry.slice(3);
+
+    // Handle rename: "R  oldname -> newname"
+    const renameArrow = filename.indexOf(' -> ');
+    if (renameArrow !== -1) {
+      filename = filename.slice(renameArrow + 4);
+    }
+
+    // Strip surrounding quotes (git quotes filenames with special chars)
+    if (filename.startsWith('"') && filename.endsWith('"')) {
+      filename = filename.slice(1, -1);
+    }
+
+    // Determine status
+    let status;
+    const combined = x + y;
+    if (y === '?' || combined === '??') status = 'added';
+    else if (y === 'D' || x === 'D') status = 'deleted';
+    else if (x === 'A' || x === '?') status = 'added';
+    else if (x === 'R' || x === 'C') status = 'renamed';
+    else status = 'modified';
+
+    changes.push({ path: filename, status });
+  }
+
+  sendJSON(res, 200, { isRepo: true, branch, changes });
+}
+
+/** GET /api/git-diff?path=<absPath>&file=<relPath>
+ *  Returns { oldText, newText } for a single file.
+ *  - oldText: the HEAD version (via `git show HEAD:file`)
+ *  - newText: the working-tree version (read from disk)
+ */
+async function handleGitDiff(res, url) {
+  const params = new URL(url, 'http://localhost').searchParams;
+  const repoPath = params.get('path');
+  const file = params.get('file');
+  if (!repoPath || !file) {
+    sendJSON(res, 400, { error: '缺少 path 或 file 参数' });
+    return;
+  }
+
+  // Security: prevent path traversal outside the repo
+  const absFile = path.resolve(repoPath, file);
+  if (!absFile.startsWith(path.resolve(repoPath))) {
+    sendJSON(res, 400, { error: '路径越界' });
+    return;
+  }
+
+  let oldText = '';
+  let newText = '';
+
+  // Read HEAD version (may fail for new/untracked files)
+  const showRes = await runGit(repoPath, ['show', `HEAD:${file}`]);
+  if (showRes.code === 0) {
+    oldText = showRes.stdout;
+  }
+
+  // Read working-tree version (may not exist for deleted files)
+  try {
+    const stat = fs.statSync(absFile);
+    if (stat.isFile() && stat.size <= 512 * 1024) {
+      newText = fs.readFileSync(absFile, 'utf-8');
+    } else if (stat.size > 512 * 1024) {
+      newText = '(文件过大，已跳过)';
+    }
+  } catch {
+    // File doesn't exist (deleted) — newText stays empty
+  }
+
+  sendJSON(res, 200, { oldText, newText });
 }

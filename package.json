@@ -9,7 +9,10 @@
     "server": "node server/clone-server.cjs"
   },
   "dependencies": {
+    "buffer": "^6.0.3",
+    "diff": "^9.0.0",
     "highlight.js": "^11.11.1",
+    "isomorphic-git": "^1.38.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",

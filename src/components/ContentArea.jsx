@@ -5,6 +5,7 @@ import rehypeHighlight from 'rehype-highlight';
 import hljs from 'highlight.js';
 import { getFileObject, getCodeLanguage, writeFileContent } from '../utils/fileSystem';
 import { EditIcon, SaveIcon, EyeIcon, ExitIcon } from './Icons';
+import GitDiffViewer from './GitDiffViewer';
 
 const CONTENT_MIN = 400, CONTENT_MAX = 1800;
 
@@ -42,7 +43,7 @@ function remarkSourceLines() {
  * The reading column has an adjustable max-width, controlled by a
  * draggable handle on its right edge (hidden while editing).
  */
-export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth, onDirtyChange, scrollTarget }) {
+export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth, onDirtyChange, scrollTarget, gitFile, gitDiffData, gitDiffLoading, gitDiffError, onCloseDiff }) {
   const areaRef = useRef(null);
   const [areaWidth, setAreaWidth] = useState(9999);
   const [editing, setEditing] = useState(false);
@@ -88,6 +89,24 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
 
   // Effective column width (clamped to available area)
   const effMax = Math.min(contentMaxWidth, areaWidth || 9999);
+
+  // ── Git diff override ──────────────────────────────────
+  // When a git change file is selected, show the diff full-screen.
+  if (gitFile) {
+    return (
+      <main className="content-area" ref={areaRef}>
+        <div className="content-body" style={{ padding: 0 }}>
+          <GitDiffViewer
+            gitFile={gitFile}
+            diffData={gitDiffData}
+            diffLoading={gitDiffLoading}
+            diffError={gitDiffError}
+            onClose={onCloseDiff}
+          />
+        </div>
+      </main>
+    );
+  }
 
   // ── Empty state ─────────────────────────────────────────
   if (!file) {
