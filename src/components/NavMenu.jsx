@@ -74,7 +74,7 @@ function NavMenuInner({
   // ── ⋯ button hover → open action dropdown ────────────────
   const handleMoreEnter = useCallback((item, e) => {
     clearTimeout(moreCloseTimer.current);
-    onFileLeave?.(); // cancel pending file-open
+    onFileLeave?.(e); // cancel pending file-open (pass event for relatedTarget check)
     const rect = e.currentTarget.getBoundingClientRect();
     moreOpenTimer.current = setTimeout(() => {
       const menuW = 168;

@@ -126,17 +126,17 @@ export default function App() {
   const [gitBranch, setGitBranch] = useState('HEAD');
   const [gitLoading, setGitLoading] = useState(false);
   const [gitError, setGitError] = useState(null);
-  const [hoveredGitFile, setHoveredGitFile] = useState(null);
-  const [diffData, setDiffData] = useState(null);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diffError, setDiffError] = useState(null);
+  const [selectedGitFile, setSelectedGitFile] = useState(null);
+  const [gitDiffData, setGitDiffData] = useState(null);
+  const [gitDiffLoading, setGitDiffLoading] = useState(false);
+  const [gitDiffError, setGitDiffError] = useState(null);
   const [gitPanelWidth, setGitPanelWidth] = useState(() =>
     loadNum(LS_GIT_PANEL_W, 440, GIT_PANEL_MIN, GIT_PANEL_MAX));
 
   // Refs for caching git data between status call and diff calls
   const gitHeadTreeMapRef = useRef(null);
   const gitFsRef = useRef(null);
-  const gitHoverTimerRef = useRef(null);
+  const gitClickLockRef = useRef(false);
 
   const changeLayoutMode = useCallback((mode) => {
     setLayoutMode(mode);
@@ -220,8 +220,8 @@ export default function App() {
   const loadGitStatus = useCallback(async () => {
     setGitLoading(true);
     setGitError(null);
-    setHoveredGitFile(null);
-    setDiffData(null);
+    setSelectedGitFile(null);
+    setGitDiffData(null);
     try {
       if (rootHandleRef.current) {
         const result = await getGitStatusFsa(rootHandleRef.current);
@@ -255,8 +255,8 @@ export default function App() {
       setIsGitRepo(false);
       setGitPanelOpen(false);
       setGitChanges([]);
-      setHoveredGitFile(null);
-      setDiffData(null);
+      setSelectedGitFile(null);
+      setGitDiffData(null);
       gitHeadTreeMapRef.current = null;
       gitFsRef.current = null;
 
@@ -317,39 +317,43 @@ export default function App() {
   }, [rootName, loadGitStatus]);
 
   // ── Git: hover a file in the change tree → load diff ─────
-  const handleGitFileHover = useCallback((fileNode) => {
-    clearTimeout(gitHoverTimerRef.current);
-    gitHoverTimerRef.current = setTimeout(async () => {
-      setHoveredGitFile(fileNode);
-      setDiffLoading(true);
-      setDiffError(null);
-      try {
-        let result;
-        if (rootHandleRef.current) {
-          result = await getFileDiffFsa(
-            rootHandleRef.current,
-            fileNode.path,
-            gitHeadTreeMapRef.current,
-            gitFsRef.current,
-            fileNode.status
-          );
-        } else if (serverRootRef.current) {
-          result = await getFileDiffServer(
-            serverRootRef.current, fileNode.path, fileNode.status
-          );
-        }
-        if (result) setDiffData(result);
-      } catch (err) {
-        setDiffError(err.message || String(err));
-      } finally {
-        setDiffLoading(false);
-      }
-    }, 200);
+   const handleCloseDiff = useCallback(() => {
+    setSelectedGitFile(null);
+    setGitDiffData(null);
   }, []);
 
-  const handleGitFileLeave = useCallback(() => {
-    clearTimeout(gitHoverTimerRef.current);
-  }, []);
+  const handleGitFileClick = useCallback(async (fileNode) => {
+    if (selectedGitFile?.path === fileNode.path) {
+      // Deselect on re-click
+      setSelectedGitFile(null);
+      setGitDiffData(null);
+      return;
+    }
+    setSelectedGitFile(fileNode);
+    setGitDiffLoading(true);
+    setGitDiffError(null);
+    try {
+      let result;
+      if (rootHandleRef.current) {
+        result = await getFileDiffFsa(
+          rootHandleRef.current,
+          fileNode.path,
+          gitHeadTreeMapRef.current,
+          gitFsRef.current,
+          fileNode.status
+        );
+      } else if (serverRootRef.current) {
+        result = await getFileDiffServer(
+          serverRootRef.current, fileNode.path, fileNode.status
+        );
+      }
+      if (result) setGitDiffData(result);
+    } catch (err) {
+      setGitDiffError(err.message || String(err));
+    } finally {
+      setGitDiffLoading(false);
+    }
+  }, [selectedGitFile]);
 
   // ── Git panel resize (drag left = wider) ─────────────────
   const onGitResizeStart = useCallback((e) => {
@@ -482,15 +486,32 @@ export default function App() {
   }, []);
 
   // ── Hover-to-open (200ms debounce) ───────────────────────
+  // Grace timer: when the mouse leaves a file row, wait briefly before
+  // clearing the open-timer.  This lets the next file row's onMouseEnter
+  // "take over" the pending open without the user seeing a flicker.
+  // If relatedTarget is another .file-row, skip clearing entirely — the
+  // new row's enter handler will reset the timer for the new file.
+  const fileLeaveTimerRef = useRef(null);
   const handleFileHover = useCallback((fileNode) => {
     clearTimeout(fileOpenTimerRef.current);
+    clearTimeout(fileLeaveTimerRef.current);
     // Block opening another file while the current one has unsaved edits
     if (dirtyRef.current) return;
     fileOpenTimerRef.current = setTimeout(() => openFile(fileNode), 200);
   }, [openFile]);
 
-  const handleFileLeave = useCallback(() => {
-    clearTimeout(fileOpenTimerRef.current);
+  const handleFileLeave = useCallback((e) => {
+    // If mouse moved directly to another file row, let its onMouseEnter
+    // handle the switch — don't clear the timer here.
+    const related = e?.relatedTarget;
+    if (related?.closest?.('.file-row')) return;
+    // Grace period: clear the open-timer after a short delay so that
+    // rapid cross-panel movements (content → sidebar) don't lose the
+    // pending file-open.
+    clearTimeout(fileLeaveTimerRef.current);
+    fileLeaveTimerRef.current = setTimeout(() => {
+      clearTimeout(fileOpenTimerRef.current);
+    }, 50);
   }, []);
 
   // ── Reload children of a directory by path (after file ops) ──
@@ -891,6 +912,11 @@ export default function App() {
         )}
         <ContentArea
           file={currentFile}
+          gitFile={selectedGitFile}
+          gitDiffData={gitDiffData}
+          gitDiffLoading={gitDiffLoading}
+          gitDiffError={gitDiffError}
+          onCloseDiff={handleCloseDiff}
           contentMaxWidth={contentMaxWidth}
           setContentMaxWidth={setContentMaxWidth}
           onDirtyChange={handleDirtyChange}
@@ -911,12 +937,8 @@ export default function App() {
                 loading={gitLoading}
                 error={gitError}
                 onRefresh={loadGitStatus}
-                onFileHover={handleGitFileHover}
-                onFileLeave={handleGitFileLeave}
-                hoveredFile={hoveredGitFile}
-                diffData={diffData}
-                diffLoading={diffLoading}
-                diffError={diffError}
+                onFileClick={handleGitFileClick}
+                selectedFile={selectedGitFile}
                 onClose={() => setGitPanelOpen(false)}
                 width={gitPanelWidth}
               />
