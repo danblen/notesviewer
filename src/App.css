@@ -1600,43 +1600,189 @@ body {
    Search trigger + Search panel
    ============================================================ */
 
-/* ── Search trigger (right edge icon) ────────────────────── */
-.search-trigger {
+/* ── Unified right panel triggers ───────────────────────── */
+.right-panel-triggers {
   flex-shrink: 0;
   width: 32px;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 9px;
+  flex-direction: column;
+  align-items: center;
   border-left: 1px solid var(--color-border);
   background: var(--color-bg);
-  cursor: pointer;
-  transition: background .12s;
   z-index: 10;
 }
-.search-trigger:hover {
+.right-panel-trigger-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .12s;
+  position: relative;
+}
+.right-panel-trigger-icon:hover {
   background: var(--color-bg-hover);
 }
-.search-trigger-icon {
+.right-panel-trigger-icon .trigger-icon {
   color: var(--color-text-3);
   transition: color .12s;
 }
-.search-trigger:hover .search-trigger-icon {
+.right-panel-trigger-icon:hover .trigger-icon,
+.right-panel-trigger-icon.active .trigger-icon {
   color: var(--color-text);
 }
-.search-trigger.open .search-trigger-icon {
+.right-panel-trigger-icon.active {
+  background: var(--color-bg-active);
+}
+.right-panel-trigger-icon.active .trigger-icon {
   color: var(--color-accent);
+}
+.right-panel-trigger-icon .git-trigger-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+}
+
+/* ── Shared right panel slot ────────────────────────────── */
+.right-panel-slot {
+  display: flex;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg);
+  animation: search-slide-in .14s ease-out;
+}
+
+/* ── Icon column (left side inside panel) ───────────────── */
+.right-panel-icon-column {
+  flex-shrink: 0;
+  width: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-right: 1px solid var(--color-border-light);
+  padding-top: 4px;
+}
+.right-panel-icon {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .12s;
+  position: relative;
+  color: var(--color-text-3);
+}
+.right-panel-icon:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+.right-panel-icon.active {
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+.right-panel-icon .trigger-icon {
+  color: inherit;
+}
+.right-panel-icon .git-trigger-badge {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 13px;
+  text-align: center;
+}
+
+/* ── Content area (fills remaining panel width) ─────────── */
+.right-panel-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
 }
 
 /* ── Search panel ────────────────────────────────────────── */
 .search-panel {
   flex-shrink: 0;
-  width: 340px;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--color-border);
   background: var(--color-bg);
   animation: search-slide-in .14s ease-out;
+}
+
+/* ── Icon column (left side inside panel) ───────────────── */
+.right-panel-icon-column {
+  flex-shrink: 0;
+  width: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-right: 1px solid var(--color-border-light);
+  padding-top: 4px;
+}
+.right-panel-icon {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .12s;
+  position: relative;
+  color: var(--color-text-3);
+}
+.right-panel-icon:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+.right-panel-icon.active {
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+.right-panel-icon .trigger-icon {
+  color: inherit;
+}
+.right-panel-icon .git-trigger-badge {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 13px;
+  text-align: center;
+}
+
+/* ── Content area (fills remaining panel width) ─────────── */
+.right-panel-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
 }
 @keyframes search-slide-in {
   from { opacity: 0; transform: translateX(16px); }
@@ -1821,49 +1967,8 @@ body {
    Git Diff Panel
    ============================================================ */
 
-/* ── Git trigger strip (panel closed) ───────────────────── */
-.git-trigger {
-  flex-shrink: 0;
-  width: 32px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 9px;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-bg);
-  cursor: pointer;
-  transition: background .12s;
-  z-index: 10;
-  position: relative;
-}
-.git-trigger:hover {
-  background: var(--color-bg-hover);
-}
-.git-trigger-icon {
-  color: var(--color-text-3);
-  transition: color .12s;
-}
-.git-trigger:hover .git-trigger-icon {
-  color: var(--color-text);
-}
-.git-trigger-badge {
-  position: absolute;
-  top: 5px;
-  right: 3px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: var(--color-accent);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 14px;
-  text-align: center;
-}
-
-/* ── Git panel resizer ──────────────────────────────────── */
-.git-panel-resizer {
+/* ── Right panel resizer ────────────────────────────────── */
+.right-panel-resizer {
   position: relative;
   width: 5px;
   cursor: col-resize;
@@ -1872,17 +1977,17 @@ body {
   flex-shrink: 0;
   transition: background .1s;
 }
-.git-panel-resizer:hover {
+.right-panel-resizer:hover {
   background: var(--color-accent);
   opacity: 0.3;
 }
 
 /* ── Git panel container ────────────────────────────────── */
 .git-panel {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--color-border);
   background: var(--color-bg);
   overflow: hidden;
   animation: git-slide-in .16s cubic-bezier(0.16, 1, 0.3, 1);

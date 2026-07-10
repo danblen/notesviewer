@@ -41,10 +41,10 @@ import {
 const LS_SIDEBAR_W = 'nv_sidebar_width';
 const LS_CONTENT_W = 'nv_content_width';
 const LS_LAYOUT = 'nv_layout';
-const LS_GIT_PANEL_W = 'nv_git_panel_width';
+const LS_RIGHT_PANEL_W = 'nv_right_panel_width';
 const SIDEBAR_MIN = 180, SIDEBAR_MAX = 520;
 const CONTENT_MIN = 400, CONTENT_MAX = 1800;
-const GIT_PANEL_MIN = 320, GIT_PANEL_MAX = 700;
+const RIGHT_PANEL_MIN = 320, RIGHT_PANEL_MAX = 700;
 
 function loadNum(key, fallback, min, max) {
   const v = Number(localStorage.getItem(key));
@@ -121,7 +121,7 @@ export default function App() {
 
   // ── Git diff panel state ─────────────────────────────────
   const [isGitRepo, setIsGitRepo] = useState(false);
-  const [gitPanelOpen, setGitPanelOpen] = useState(false);
+  const [activeRightPanel, setActiveRightPanel] = useState(null);
   const [gitChanges, setGitChanges] = useState([]);
   const [gitBranch, setGitBranch] = useState('HEAD');
   const [gitLoading, setGitLoading] = useState(false);
@@ -130,8 +130,8 @@ export default function App() {
   const [gitDiffData, setGitDiffData] = useState(null);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [gitDiffError, setGitDiffError] = useState(null);
-  const [gitPanelWidth, setGitPanelWidth] = useState(() =>
-    loadNum(LS_GIT_PANEL_W, 440, GIT_PANEL_MIN, GIT_PANEL_MAX));
+  const [rightPanelWidth, setRightPanelWidth] = useState(() =>
+    loadNum(LS_RIGHT_PANEL_W, 440, RIGHT_PANEL_MIN, RIGHT_PANEL_MAX));
 
   // Refs for caching git data between status call and diff calls
   const gitHeadTreeMapRef = useRef(null);
@@ -182,28 +182,33 @@ export default function App() {
   const openClone = useCallback(() => setShowClone(true), []);
   const closeClone = useCallback(() => setShowClone(false), []);
 
-  // Search panel
-  const [searchOpen, setSearchOpen] = useState(false);
+  // Unified right panel state
   const [revealPath, setRevealPath] = useState(null);
   const [scrollTarget, setScrollTarget] = useState(null); // { line, path }
-  const searchHoverTimerRef = useRef(null);
+  const rightPanelTimerRef = useRef(null);
+  const rightPanelLeaveTimerRef = useRef(null);
   const searchFileHoverTimerRef = useRef(null);
 
-  const handleSearchIconEnter = useCallback(() => {
-    clearTimeout(searchHoverTimerRef.current);
-    searchHoverTimerRef.current = setTimeout(() => setSearchOpen(true), 80);
+  const openRightPanel = useCallback((panel) => {
+    clearTimeout(rightPanelTimerRef.current);
+    clearTimeout(rightPanelLeaveTimerRef.current);
+    rightPanelTimerRef.current = setTimeout(() => setActiveRightPanel(panel), 80);
   }, []);
 
-  const handleSearchIconLeave = useCallback(() => {
-    clearTimeout(searchHoverTimerRef.current);
+  const closeRightPanel = useCallback(() => {
+    clearTimeout(rightPanelTimerRef.current);
+    setActiveRightPanel(null);
   }, []);
 
-  const handleSearchIconClick = useCallback(() => {
-    clearTimeout(searchHoverTimerRef.current);
-    setSearchOpen(false);
-    setRevealPath(null);
-    setScrollTarget(null);
+  const schedulePanelClose = useCallback(() => {
+    clearTimeout(rightPanelLeaveTimerRef.current);
+    rightPanelLeaveTimerRef.current = setTimeout(() => setActiveRightPanel(null), 300);
   }, []);
+
+  const cancelPanelClose = useCallback(() => {
+    clearTimeout(rightPanelLeaveTimerRef.current);
+  }, []);
+
 
   const handleSearchResultLeave = useCallback(() => {
     clearTimeout(searchFileHoverTimerRef.current);
@@ -214,7 +219,7 @@ export default function App() {
   // Persist widths
   useEffect(() => { localStorage.setItem(LS_SIDEBAR_W, String(sidebarWidth)); }, [sidebarWidth]);
   useEffect(() => { localStorage.setItem(LS_CONTENT_W, String(contentMaxWidth)); }, [contentMaxWidth]);
-  useEffect(() => { localStorage.setItem(LS_GIT_PANEL_W, String(gitPanelWidth)); }, [gitPanelWidth]);
+  useEffect(() => { localStorage.setItem(LS_RIGHT_PANEL_W, String(rightPanelWidth)); }, [rightPanelWidth]);
 
   // ── Git: load status (changed files + branch) ────────────
   const loadGitStatus = useCallback(async () => {
@@ -253,7 +258,7 @@ export default function App() {
     async function detectGit() {
       // Reset git state
       setIsGitRepo(false);
-      setGitPanelOpen(false);
+      if (activeRightPanel === 'git') setActiveRightPanel(null);
       setGitChanges([]);
       setSelectedGitFile(null);
       setGitDiffData(null);
@@ -273,14 +278,12 @@ export default function App() {
         if (!isGit && hasGitInTree) isGit = true;
         if (!cancelled && isGit) {
           setIsGitRepo(true);
-          setGitPanelOpen(true);
           loadGitStatus();
         }
       } else if (serverRoot) {
         const isGit = await isGitRepoServer(serverRoot);
         if (!cancelled && isGit) {
           setIsGitRepo(true);
-          setGitPanelOpen(true);
           loadGitStatus();
         }
       } else if (hasGitInTree) {
@@ -298,7 +301,6 @@ export default function App() {
             const isGit = await isGitRepoServer(root);
             if (!cancelled && isGit) {
               setIsGitRepo(true);
-              setGitPanelOpen(true);
               loadGitStatus();
             }
           }
@@ -306,7 +308,6 @@ export default function App() {
           // Pure webkitdirectory — no server backend, no FSA handle.
           // Show panel with a message that git diff needs Chrome/Edge.
           setIsGitRepo(true);
-          setGitPanelOpen(true);
           setGitError('当前浏览器不支持 Git diff 功能，请使用 Chrome 或 Edge 浏览器以获取完整体验。');
           setGitLoading(false);
         }
@@ -355,14 +356,14 @@ export default function App() {
     }
   }, [selectedGitFile]);
 
-  // ── Git panel resize (drag left = wider) ─────────────────
-  const onGitResizeStart = useCallback((e) => {
+  // ── Right panel resize (drag left = wider) ────────────────
+  const onRightPanelResizeStart = useCallback((e) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startW = gitPanelWidth;
+    const startW = rightPanelWidth;
     const onMove = (ev) => {
-      const w = Math.min(GIT_PANEL_MAX, Math.max(GIT_PANEL_MIN, startW - (ev.clientX - startX)));
-      setGitPanelWidth(w);
+      const w = Math.min(RIGHT_PANEL_MAX, Math.max(RIGHT_PANEL_MIN, startW - (ev.clientX - startX)));
+      setRightPanelWidth(w);
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
@@ -374,7 +375,7 @@ export default function App() {
     document.addEventListener('mouseup', onUp);
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-  }, [gitPanelWidth]);
+  }, [rightPanelWidth]);
 
   // ── Boot: load recent spaces + silently restore last active ──
   useEffect(() => {
@@ -922,65 +923,98 @@ export default function App() {
           onDirtyChange={handleDirtyChange}
           scrollTarget={scrollTarget}
         />
-        {/* Git diff panel — auto-opens for git repos, resizable */}
-        {isGitRepo && gitPanelOpen && (
-          <>
-            <div
-              className="resizer git-panel-resizer"
-              onMouseDown={onGitResizeStart}
-              title="拖动调整面板宽度"
-            />
-            <PanelErrorBoundary>
-              <GitDiffPanel
-                changes={gitChanges}
-                branch={gitBranch}
-                loading={gitLoading}
-                error={gitError}
-                onRefresh={loadGitStatus}
-                onFileClick={handleGitFileClick}
-                selectedFile={selectedGitFile}
-                onClose={() => setGitPanelOpen(false)}
-                width={gitPanelWidth}
-              />
-            </PanelErrorBoundary>
-          </>
+        {/* ── Collapsed trigger strip (visible when panel closed) ── */}
+        {!activeRightPanel && (
+        <div className="right-panel-triggers">
+          <div className="right-panel-trigger-icon" onMouseEnter={() => openRightPanel('search')} title="搜索">
+            <SearchIcon size={16} className="trigger-icon" />
+          </div>
+          {isGitRepo && (
+            <div className="right-panel-trigger-icon git" onMouseEnter={() => openRightPanel('git')} title="Git 更改">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="trigger-icon">
+                <circle cx="4" cy="3.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+                <circle cx="4" cy="12.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+                <circle cx="12" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+                <path d="M4 5v6M4 8c0-2 8-2 8-4.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
+              </svg>
+              {gitChanges.length > 0 && (
+                <span className="git-trigger-badge">{gitChanges.length}</span>
+              )}
+            </div>
+          )}
+        </div>
         )}
-        {/* Git trigger strip — visible when repo detected and panel closed */}
-        {isGitRepo && !gitPanelOpen && (
+
+        {/* ── Expanded right panel (with icon column inside) ── */}
+        {activeRightPanel && (
+        <div
+          className="right-panel-slot"
+          style={{ width: rightPanelWidth }}
+          onMouseEnter={cancelPanelClose}
+          onMouseLeave={schedulePanelClose}
+        >
           <div
-            className="git-trigger"
-            onClick={() => { setGitPanelOpen(true); loadGitStatus(); }}
-            title="Git 更改"
-          >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="git-trigger-icon">
-              <circle cx="4" cy="3.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-              <circle cx="4" cy="12.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-              <circle cx="12" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-              <path d="M4 5v6M4 8c0-2 8-2 8-4.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
-            </svg>
-            {gitChanges.length > 0 && (
-              <span className="git-trigger-badge">{gitChanges.length}</span>
+            className="resizer right-panel-resizer"
+            onMouseDown={onRightPanelResizeStart}
+            title="拖动调整面板宽度"
+          />
+          {/* Icon column — left side inside panel */}
+          <div className="right-panel-icon-column">
+            <div
+              className={`right-panel-icon ${activeRightPanel === 'search' ? 'active' : ''}`}
+              onMouseEnter={() => openRightPanel('search')}
+              onClick={() => activeRightPanel === 'search' ? closeRightPanel() : openRightPanel('search')}
+              title="搜索"
+            >
+              <SearchIcon size={16} className="trigger-icon" />
+            </div>
+            {isGitRepo && (
+              <div
+                className={`right-panel-icon git ${activeRightPanel === 'git' ? 'active' : ''}`}
+                onMouseEnter={() => openRightPanel('git')}
+                onClick={() => activeRightPanel === 'git' ? closeRightPanel() : openRightPanel('git')}
+                title="Git 更改"
+              >
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="trigger-icon">
+                  <circle cx="4" cy="3.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+                  <circle cx="4" cy="12.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+                  <circle cx="12" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.1" />
+                  <path d="M4 5v6M4 8c0-2 8-2 8-4.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
+                </svg>
+                {gitChanges.length > 0 && (
+                  <span className="git-trigger-badge">{gitChanges.length}</span>
+                )}
+              </div>
             )}
           </div>
-        )}
-        {/* Search trigger — hover to open, click to close */}
-        <div
-          className={`search-trigger ${searchOpen ? 'open' : ''}`}
-          onMouseEnter={handleSearchIconEnter}
-          onMouseLeave={handleSearchIconLeave}
-          onClick={handleSearchIconClick}
-          title={searchOpen ? '点击收起搜索' : '悬浮打开搜索'}
-        >
-          <SearchIcon size={16} className="search-trigger-icon" />
+          {/* Content area — fills remaining width */}
+          <div className="right-panel-content" style={{ flex: 1, minWidth: 0 }}>
+            {activeRightPanel === 'search' && (
+              <SearchPanel
+                rootHandle={rootHandleRef.current}
+                onHoverResult={handleSearchResultHover}
+                onLeaveResult={handleSearchResultLeave}
+              />
+            )}
+            {activeRightPanel === 'git' && (
+              <PanelErrorBoundary>
+                <GitDiffPanel
+                  changes={gitChanges}
+                  branch={gitBranch}
+                  loading={gitLoading}
+                  error={gitError}
+                  onRefresh={loadGitStatus}
+                  onFileClick={handleGitFileClick}
+                  selectedFile={selectedGitFile}
+                  onClose={closeRightPanel}
+                />
+              </PanelErrorBoundary>
+            )}
+          </div>
         </div>
-        {searchOpen && (
-          <SearchPanel
-            rootHandle={rootHandleRef.current}
-            onHoverResult={handleSearchResultHover}
-            onLeaveResult={handleSearchResultLeave}
-          />
         )}
       </div>
+        )}
       {showClone && <CloneModal onClose={closeClone} onOpenAsSpace={handleOpenClonedSpace} />}
     </div>
   );
