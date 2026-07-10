@@ -924,7 +924,6 @@ export default function App() {
           scrollTarget={scrollTarget}
         />
         {/* ── Collapsed trigger strip (visible when panel closed) ── */}
-        {!activeRightPanel && (
         <div className="right-panel-triggers">
           <div className="right-panel-trigger-icon" onMouseEnter={() => openRightPanel('search')} title="搜索">
             <SearchIcon size={16} className="trigger-icon" />
@@ -943,13 +942,11 @@ export default function App() {
             </div>
           )}
         </div>
-        )}
 
-        {/* ── Expanded right panel (with icon column inside) ── */}
-        {activeRightPanel && (
+        {/* ── Expanded right panel (always rendered, width animates) ── */}
         <div
-          className="right-panel-slot"
-          style={{ width: rightPanelWidth }}
+          className={`right-panel-slot${!activeRightPanel ? ' collapsed' : ''}`}
+          style={{ width: activeRightPanel ? rightPanelWidth : 0 }}
           onMouseEnter={cancelPanelClose}
           onMouseLeave={schedulePanelClose}
         >
@@ -958,36 +955,7 @@ export default function App() {
             onMouseDown={onRightPanelResizeStart}
             title="拖动调整面板宽度"
           />
-          {/* Icon column — left side inside panel */}
-          <div className="right-panel-icon-column">
-            <div
-              className={`right-panel-icon ${activeRightPanel === 'search' ? 'active' : ''}`}
-              onMouseEnter={() => openRightPanel('search')}
-              onClick={() => activeRightPanel === 'search' ? closeRightPanel() : openRightPanel('search')}
-              title="搜索"
-            >
-              <SearchIcon size={16} className="trigger-icon" />
-            </div>
-            {isGitRepo && (
-              <div
-                className={`right-panel-icon git ${activeRightPanel === 'git' ? 'active' : ''}`}
-                onMouseEnter={() => openRightPanel('git')}
-                onClick={() => activeRightPanel === 'git' ? closeRightPanel() : openRightPanel('git')}
-                title="Git 更改"
-              >
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="trigger-icon">
-                  <circle cx="4" cy="3.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-                  <circle cx="4" cy="12.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-                  <circle cx="12" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-                  <path d="M4 5v6M4 8c0-2 8-2 8-4.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
-                </svg>
-                {gitChanges.length > 0 && (
-                  <span className="git-trigger-badge">{gitChanges.length}</span>
-                )}
-              </div>
-            )}
-          </div>
-          {/* Content area — fills remaining width */}
+          {/* Content area */}
           <div className="right-panel-content" style={{ flex: 1, minWidth: 0 }}>
             {activeRightPanel === 'search' && (
               <SearchPanel
@@ -1012,7 +980,6 @@ export default function App() {
             )}
           </div>
         </div>
-        )}
       </div>
         )}
       {showClone && <CloneModal onClose={closeClone} onOpenAsSpace={handleOpenClonedSpace} />}
