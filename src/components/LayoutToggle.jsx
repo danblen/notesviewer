@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { LayoutIcon, ChevronRight, CheckIcon } from './Icons';
+import { LayoutIcon, ChevronRight } from './Icons';
 
 const LAYOUTS = [
   { value: 'top-left',  label: '顶 + 左侧' },
@@ -18,6 +18,7 @@ export default function LayoutToggle({ layoutMode, onChangeLayout, dropdownGroup
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const closeTimer = useRef(null);
+  const hoverTimer = useRef(null);
 
   // Mutual exclusion: close when another dropdown in the group opens
   useEffect(() => {
@@ -55,12 +56,24 @@ export default function LayoutToggle({ layoutMode, onChangeLayout, dropdownGroup
     }, 300);
   }, [dropdownGroup, dropdownId]);
 
+  const hoverItem = useRef(null);
+
   const pick = useCallback((v) => {
     clearTimeout(closeTimer.current);
     setOpen(false);
     if (dropdownGroup) dropdownGroup.release(dropdownId);
     onChangeLayout?.(v);
   }, [onChangeLayout, dropdownGroup, dropdownId]);
+
+  const handleItemEnter = useCallback((v) => {
+    clearTimeout(hoverTimer.current);
+    hoverItem.current = v;
+    hoverTimer.current = setTimeout(() => {
+      if (hoverItem.current === v) {
+        onChangeLayout?.(v);
+      }
+    }, 350);
+  }, [onChangeLayout]);
 
   return (
     <>
@@ -85,9 +98,9 @@ export default function LayoutToggle({ layoutMode, onChangeLayout, dropdownGroup
               key={opt.value}
               className={`layout-dropdown-item ${layoutMode === opt.value ? 'active' : ''}`}
               onClick={() => pick(opt.value)}
+              onMouseEnter={() => handleItemEnter(opt.value)}
             >
               <span className="layout-dropdown-label">{opt.label}</span>
-              {layoutMode === opt.value && <CheckIcon size={12} className="check-icon" />}
             </div>
           ))}
         </div>

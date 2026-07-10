@@ -65,7 +65,7 @@ export default function SpaceSelector({
       onSwitchSpace(spaceId);
       setOpen(false);
       if (dropdownGroup) dropdownGroup.release(dropdownId);
-    }, 300);
+    }, 400);
   }, [onSwitchSpace, activeSpaceId, spaceMore, spaceConfirm, dropdownGroup, dropdownId]);
 
   const handleSpaceLeave = useCallback(() => clearTimeout(switchTimer.current), []);
