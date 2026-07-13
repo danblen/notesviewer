@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages & EC2
 
 on:
   push:
@@ -14,27 +14,62 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  deploy-pages:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
       - run: npm ci
-      - run: npm run build
-
+      - name: Build for GitHub Pages
+        run: |
+          sed -i "s|base: '/|base: '/notesviewer/|" vite.config.js
+          npm run build
       - uses: actions/configure-pages@v5
-
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  deploy-ec2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Upload frontend to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 34.229.154.15
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "dist/*"
+          target: /usr/share/nginx/html
+          strip_components: 1
+          rm: true
+      - name: Upload backend to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 34.229.154.15
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "server/clone-server.cjs"
+          target: /opt/notesview
+          strip_components: 1
+      - name: Restart backend
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: 34.229.154.15
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: sudo systemctl restart notesview
