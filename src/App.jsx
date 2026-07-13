@@ -981,7 +981,6 @@ export default function App() {
           </div>
         </div>
       </div>
-        )}
       {showClone && <CloneModal onClose={closeClone} onOpenAsSpace={handleOpenClonedSpace} />}
     </div>
   );
