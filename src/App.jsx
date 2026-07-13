@@ -925,11 +925,11 @@ export default function App() {
         />
         {/* ── Collapsed trigger strip (visible when panel closed) ── */}
         <div className="right-panel-triggers">
-          <div className="right-panel-trigger-icon" onMouseEnter={() => openRightPanel('search')} title="搜索">
+          <div className={`right-panel-trigger-icon${activeRightPanel === 'search' ? ' active' : ''}`} onMouseEnter={() => openRightPanel('search')} title="搜索">
             <SearchIcon size={16} className="trigger-icon" />
           </div>
           {isGitRepo && (
-            <div className="right-panel-trigger-icon git" onMouseEnter={() => openRightPanel('git')} title="Git 更改">
+            <div className={`right-panel-trigger-icon git${activeRightPanel === 'git' ? ' active' : ''}`} onMouseEnter={() => openRightPanel('git')} title="Git 更改">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="trigger-icon">
                 <circle cx="4" cy="3.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
                 <circle cx="4" cy="12.5" r="1.5" stroke="currentColor" strokeWidth="1.1" />
