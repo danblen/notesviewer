@@ -44,7 +44,7 @@ function cloneServerPlugin() {
 
 export default defineConfig({
   plugins: [react(), cloneServerPlugin()],
-  base: '/notesviewer/',
+  base: '/',
   server: {
     port: 5174,
     proxy: {
