@@ -11,6 +11,7 @@
  */
 
 import { apiUrl } from './apiConfig';
+import ignore from 'ignore';
 
 // Lazy-load isomorphic-git with its polyfills.
 // CRITICAL: Buffer and process polyfills must NOT be set at module load time —
@@ -325,19 +326,75 @@ async function buildHeadTreeMapFsa(g, fs) {
 // Get changed files (status)
 // ============================================================
 
-// Directories that are always excluded from git status (like .gitignore defaults).
-// isomorphic-git's statusMatrix doesn't respect .gitignore automatically.
-const GIT_EXCLUDED_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.next', '.nuxt',
-  'coverage', '.cache', '.turbo', '.parcel-cache', '.svelte-kit',
-  '.vercel', '.deno', '.gradle', '.idea', '.vscode', 'out', '.output',
-  '__pycache__', '.pytest_cache', '.mypy_cache', 'vendor',
-  'bower_components', 'jspm_packages', '.DS_Store',
-]);
+/**
+ * Read .gitignore from the repo root and build an ignore filter.
+ * Uses the `ignore` npm package — a proven open-source .gitignore parser.
+ * @param {FileSystemDirectoryHandle} rootHandle
+ * @returns {Promise<Object>} an `ignore` instance
+ */
+async function createIgnoreFilter(rootHandle) {
+  const ig = ignore();
+  try {
+    const fh = await rootHandle.getFileHandle('.gitignore');
+    const file = await fh.getFile();
+    const text = await file.text();
+    ig.add(text);
+  } catch {
+    // No .gitignore — empty filter
+  }
+  return ig;
+}
 
-function shouldExcludePath(filepath) {
-  const parts = filepath.split('/');
-  return parts.some(p => GIT_EXCLUDED_DIRS.has(p));
+/**
+ * Recursively walk the working directory, collecting all file paths.
+ * Skips the .git directory and any directory matched by the ignore filter.
+ * @param {FileSystemDirectoryHandle} dirHandle
+ * @param {Object} ig — ignore instance
+ * @param {string} prefix — path prefix (for recursion)
+ * @returns {Promise<string[]>} array of file paths relative to repo root
+ */
+async function walkWorkingDirectory(dirHandle, ig, prefix = '') {
+  const files = [];
+  for await (const entry of dirHandle.values()) {
+    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.kind === 'directory') {
+      if (entry.name === '.git') continue;
+      // Skip ignored directories (check with trailing slash for dir patterns)
+      if (ig.ignores(path + '/')) continue;
+      files.push(...await walkWorkingDirectory(entry, ig, path));
+    } else if (entry.kind === 'file') {
+      if (ig.ignores(path)) continue;
+      files.push(path);
+    }
+  }
+  return files;
+}
+
+/**
+ * Read raw bytes of a file from the FSA root handle.
+ * @param {FileSystemDirectoryHandle} rootHandle
+ * @param {string} filepath — path relative to repo root
+ * @returns {Promise<Uint8Array>}
+ */
+async function readFileBytesFsa(rootHandle, filepath) {
+  const clean = filepath.replace(/^\.\//, '');
+  const parts = clean.split('/');
+  let dir = rootHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    dir = await dir.getDirectoryHandle(parts[i]);
+  }
+  const fh = await dir.getFileHandle(parts[parts.length - 1]);
+  const file = await fh.getFile();
+  return new Uint8Array(await file.arrayBuffer());
+}
+
+/** Compare two Uint8Arrays for equality. */
+function bytesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 /**
@@ -349,8 +406,16 @@ function shouldExcludePath(filepath) {
 
 /**
  * Get changed files for a FSA-backed space.
+ *
+ * Replaces the unreliable `statusMatrix` with a direct approach:
+ *   1. Read HEAD tree via isomorphic-git (log → readCommit → readTree)
+ *   2. Walk the working directory via FSA API
+ *   3. Filter via `ignore` npm package for .gitignore support
+ *   4. For tracked files: compare actual bytes (HEAD blob vs workdir file)
+ *   5. For untracked files: filter against .gitignore
+ *
  * @param {FileSystemDirectoryHandle} rootHandle
- * @returns {Promise<{changes: GitChange[], branch: string}>}
+ * @returns {Promise<{changes: GitChange[], branch: string, headTreeMap: Map, fs: Object}>}
  */
 export async function getGitStatusFsa(rootHandle) {
   const g = await git();
@@ -362,40 +427,57 @@ export async function getGitStatusFsa(rootHandle) {
     branch = await g.currentBranch({ fs, dir: '.', fullname: false }) || 'HEAD';
   } catch { /* ignore */ }
 
-  // Build HEAD tree map for diff lookups (cached by caller)
+  // Build HEAD tree map (path → blob oid) — used for both status & diff
   const headTreeMap = await buildHeadTreeMapFsa(g, fs);
 
-  // statusMatrix: [[filepath, HEAD, WORKDIR, STAGE], ...]
-  // Values: 0=absent, 1=present(matches HEAD), 2=modified, 3=added
-  // filter excludes common ignored dirs (statusMatrix doesn't read .gitignore)
-  let matrix = [];
+  // Build .gitignore filter using the `ignore` package
+  const ig = await createIgnoreFilter(rootHandle);
+
+  // Walk the working directory (skips .git and ignored dirs)
+  let workdirFiles = [];
   try {
-    matrix = await g.statusMatrix({
-      fs, dir: '.',
-      ignored: true,
-    });
+    workdirFiles = await walkWorkingDirectory(rootHandle, ig);
   } catch (err) {
-    console.error('[gitUtils] statusMatrix failed:', err);
+    console.error('[gitUtils] walkWorkingDirectory failed:', err);
     return { changes: [], branch, headTreeMap, fs };
   }
 
   const changes = [];
-  for (const [filepath, head, workdir, stage] of matrix) {
-    // Skip excluded paths (e.g. node_modules that are somehow tracked)
-    if (shouldExcludePath(filepath)) continue;
-    // Skip unchanged (both 1)
-    if (head === 1 && workdir === 1) continue;
+  const workdirSet = new Set(workdirFiles);
 
-    let status;
-    if (head === 1 && workdir === 2) status = 'modified';
-    else if (head === 0 && workdir === 2) status = 'added'; // new/untracked
-    else if (head === 1 && workdir === 0) status = 'deleted';
-    else if (head === 0 && workdir === 0) continue; // not present anywhere
-    else if (head === 2) status = 'modified';
-    else continue;
+  // 1. Check tracked files (in HEAD) for modifications or deletions
+  for (const [filepath, blobOid] of headTreeMap) {
+    const inWorkdir = workdirSet.has(filepath);
+    if (!inWorkdir) {
+      // File in HEAD but not in working directory → deleted
+      const name = filepath.includes('/') ? filepath.slice(filepath.lastIndexOf('/') + 1) : filepath;
+      changes.push({ path: filepath, name, status: 'deleted' });
+      continue;
+    }
+
+    // Compare actual bytes: HEAD blob vs working directory file
+    try {
+      const { blob } = await g.readBlob({ fs, dir: '.', oid: blobOid });
+      const headBytes = new Uint8Array(blob);
+      const workdirBytes = await readFileBytesFsa(rootHandle, filepath);
+
+      // Only report as modified if bytes actually differ
+      if (!bytesEqual(headBytes, workdirBytes)) {
+        const name = filepath.includes('/') ? filepath.slice(filepath.lastIndexOf('/') + 1) : filepath;
+        changes.push({ path: filepath, name, status: 'modified' });
+      }
+    } catch {
+      // If we can't read either version, skip
+    }
+  }
+
+  // 2. Check for untracked files (in workdir but not in HEAD)
+  for (const filepath of workdirFiles) {
+    if (headTreeMap.has(filepath)) continue; // already tracked
+    if (ig.ignores(filepath)) continue;      // double-check .gitignore
 
     const name = filepath.includes('/') ? filepath.slice(filepath.lastIndexOf('/') + 1) : filepath;
-    changes.push({ path: filepath, name, status });
+    changes.push({ path: filepath, name, status: 'added' });
   }
 
   changes.sort((a, b) => a.path.localeCompare(b.path));

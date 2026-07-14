@@ -128,8 +128,9 @@ function DiffRowSide({ row, side }) {
 
   let segments = null;
   if (row.type === 'modified' && row.oldContent !== null && row.newContent !== null) {
+    // wordDiff returns null when either side is an empty string — guard against it
     const hl = wordDiff(row.oldContent, row.newContent);
-    segments = isOld ? hl.old : hl.new;
+    if (hl) segments = isOld ? hl.old : hl.new;
   }
 
   return (

@@ -427,15 +427,15 @@ async function handleGitStatus(res, url) {
   const branchRes = await runGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
   const branch = branchRes.code === 0 ? branchRes.stdout.trim() : 'HEAD';
 
-  // Get porcelain status
-  const statusRes = await runGit(repoPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+  // Get porcelain status (--no-renames avoids -z rename parsing complexity)
+  const statusRes = await runGit(repoPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames']);
   if (statusRes.code !== 0) {
     sendJSON(res, 200, { isRepo: true, branch, changes: [] });
     return;
   }
 
   // Parse porcelain -z output (null-separated entries)
-  // Each entry: "XY filename" or "XY filename\0oldname -> newname" for renames
+  // Each entry: "XY filename" — with --no-renames, renames show as D + A pairs
   const changes = [];
   const entries = statusRes.stdout.split('\0').filter((e) => e.length > 0);
   for (let entry of entries) {
@@ -443,12 +443,6 @@ async function handleGitStatus(res, url) {
     const x = entry[0]; // staged status
     const y = entry[1]; // workdir status
     let filename = entry.slice(3);
-
-    // Handle rename: "R  oldname -> newname"
-    const renameArrow = filename.indexOf(' -> ');
-    if (renameArrow !== -1) {
-      filename = filename.slice(renameArrow + 4);
-    }
 
     // Strip surrounding quotes (git quotes filenames with special chars)
     if (filename.startsWith('"') && filename.endsWith('"')) {
@@ -461,7 +455,6 @@ async function handleGitStatus(res, url) {
     if (y === '?' || combined === '??') status = 'added';
     else if (y === 'D' || x === 'D') status = 'deleted';
     else if (x === 'A' || x === '?') status = 'added';
-    else if (x === 'R' || x === 'C') status = 'renamed';
     else status = 'modified';
 
     changes.push({ path: filename, status });
