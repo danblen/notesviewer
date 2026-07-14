@@ -51,7 +51,7 @@ jobs:
       - name: Prepare EC2 directories
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: 34.229.154.15
+          host: 44.194.211.249
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
@@ -61,7 +61,7 @@ jobs:
       - name: Upload to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: 34.229.154.15
+          host: 44.194.211.249
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "dist/*,server/clone-server.cjs,deploy/*"
@@ -71,7 +71,7 @@ jobs:
       - name: Deploy frontend, backend & setup HTTPS
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: 34.229.154.15
+          host: 44.194.211.249
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
