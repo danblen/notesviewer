@@ -28,6 +28,7 @@ import {
   renameEntry,
   openFolderAsWorkspace,
   openPathAsSpace,
+  refreshTree,
 } from './utils/fileSystem';
 import {
   isGitRepoFsa,
@@ -137,6 +138,14 @@ export default function App() {
   const gitHeadTreeMapRef = useRef(null);
   const gitFsRef = useRef(null);
   const gitClickLockRef = useRef(false);
+
+  // Refs mirroring git state, for use inside event listeners / quiet refresh
+  const isGitRepoRef = useRef(false);
+  isGitRepoRef.current = isGitRepo;
+  const selectedGitFileRef = useRef(null);
+  selectedGitFileRef.current = selectedGitFile;
+  const gitRefreshRunningRef = useRef(false);
+  const gitLastRefreshRef = useRef(0);
 
   const changeLayoutMode = useCallback((mode) => {
     setLayoutMode(mode);
@@ -311,12 +320,8 @@ export default function App() {
     setGitDiffData(null);
   }, []);
 
-  const handleGitFileClick = useCallback(async (fileNode) => {
-    if (selectedGitFile?.path === fileNode.path) {
-      // Deselect on re-click
-      return;
-    }
-    setSelectedGitFile(fileNode);
+  // Fetch and display the diff for a single changed file.
+  const fetchGitDiff = useCallback(async (fileNode) => {
     setGitDiffLoading(true);
     setGitDiffError(null);
     try {
@@ -340,7 +345,113 @@ export default function App() {
     } finally {
       setGitDiffLoading(false);
     }
-  }, [selectedGitFile]);
+  }, []);
+
+  const handleGitFileClick = useCallback((fileNode) => {
+    if (selectedGitFile?.path === fileNode.path) {
+      // Re-click keeps the current selection
+      return;
+    }
+    setSelectedGitFile(fileNode);
+    fetchGitDiff(fileNode);
+  }, [selectedGitFile, fetchGitDiff]);
+
+  // ── Git: quiet auto-refresh ──────────────────────────────
+  // Reloads the change list WITHOUT the loading spinner or clearing the
+  // open diff. If a file's diff is currently shown, its latest content is
+  // re-fetched; if the file is clean again, the diff is closed.
+  // Triggered on git-panel open and on window focus (see effects below).
+  const refreshGitStatusQuiet = useCallback(async () => {
+    if (!isGitRepoRef.current) return;
+    if (gitRefreshRunningRef.current) return;
+    // Throttle bursts (focus + panel-open can fire nearly together)
+    const now = Date.now();
+    if (now - gitLastRefreshRef.current < 800) return;
+    gitLastRefreshRef.current = now;
+    gitRefreshRunningRef.current = true;
+    try {
+      let result;
+      if (rootHandleRef.current) {
+        result = await getGitStatusFsa(rootHandleRef.current);
+        gitHeadTreeMapRef.current = result.headTreeMap;
+        gitFsRef.current = result.fs;
+      } else if (serverRootRef.current) {
+        result = await getGitStatusServer(serverRootRef.current);
+        gitHeadTreeMapRef.current = null;
+        gitFsRef.current = null;
+      } else {
+        return;
+      }
+      setGitChanges(result.changes);
+      setGitBranch(result.branch);
+
+      // Re-sync the currently open diff (if any)
+      const sel = selectedGitFileRef.current;
+      if (sel) {
+        const still = result.changes.find(c => c.path === sel.path);
+        if (!still) {
+          // File is clean again → close the diff
+          setSelectedGitFile(null);
+          setGitDiffData(null);
+        } else {
+          // Status may have shifted (e.g. added → modified) — refresh both
+          const updated = still.status === sel.status ? sel : { ...sel, status: still.status };
+          if (updated !== sel) setSelectedGitFile(updated);
+          fetchGitDiff(updated);
+        }
+      }
+    } catch { /* quiet — keep existing data on failure */ }
+    finally {
+      gitRefreshRunningRef.current = false;
+    }
+  }, [fetchGitDiff]);
+
+  // ── File tree: quiet auto-refresh ────────────────────────
+  // Re-reads the tree from disk (preserving expanded folders) so newly
+  // added / removed / renamed files show up without a manual refresh.
+  const treeRefreshRunningRef = useRef(false);
+  const treeLastRefreshRef = useRef(0);
+  const refreshFileTree = useCallback(async () => {
+    if (treeRefreshRunningRef.current) return;
+    let rootRef = null;
+    if (rootHandleRef.current) rootRef = { handle: rootHandleRef.current };
+    else if (serverRootRef.current) rootRef = { serverPath: serverRootRef.current };
+    else return;
+    // Throttle bursts (focus + visibilitychange can fire together)
+    const now = Date.now();
+    if (now - treeLastRefreshRef.current < 800) return;
+    treeLastRefreshRef.current = now;
+    treeRefreshRunningRef.current = true;
+    try {
+      const fresh = await refreshTree(fileTreeRef.current, rootRef);
+      setFileTree(fresh);
+    } catch { /* quiet — keep existing tree on failure */ }
+    finally {
+      treeRefreshRunningRef.current = false;
+    }
+  }, []);
+
+  // Auto-refresh when the git panel is opened
+  useEffect(() => {
+    if (activeRightPanel === 'git' && isGitRepo) {
+      refreshGitStatusQuiet();
+    }
+  }, [activeRightPanel, isGitRepo, refreshGitStatusQuiet]);
+
+  // Auto-refresh git status + file tree when the window/tab regains focus
+  // (catches edits made in external editors/IDEs)
+  useEffect(() => {
+    const onFocus = () => { refreshGitStatusQuiet(); refreshFileTree(); };
+    const onVisible = () => {
+      if (!document.hidden) { refreshGitStatusQuiet(); refreshFileTree(); }
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refreshGitStatusQuiet, refreshFileTree]);
 
   // ── Right panel resize (drag left = wider) ────────────────
   const onRightPanelResizeStart = useCallback((e) => {
@@ -458,9 +569,16 @@ export default function App() {
   // ── Open file ────────────────────────────────────────────
   const openFile = useCallback((fileNode) => {
     if (!fileNode || fileNode.kind !== 'file') return;
-    if (currentFileIdRef.current === fileNode.id) return;
     // Safety net: handleFileHover already blocks while dirty, but guard anyway
     if (dirtyRef.current) return;
+
+    // Hovering a sidebar file dismisses the Git diff overlay so the file's own
+    // content is shown instead of being covered by the diff view. Done before
+    // the same-file early return so re-hovering the underlying file also works.
+    setSelectedGitFile(null);
+    setGitDiffData(null);
+
+    if (currentFileIdRef.current === fileNode.id) return;
 
     const type = getFileType(fileNode.name);
     setCurrentFile({

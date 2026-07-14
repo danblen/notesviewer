@@ -243,6 +243,46 @@ export async function rebuildTree(rootHandle) {
   return buildTreeLevel(rootHandle);
 }
 
+// ── Public: refresh tree preserving expansion state ────────
+//
+// Re-reads the tree from disk so newly added / removed / renamed files
+// appear, WITHOUT collapsing folders the user has expanded. A folder is
+// considered "expanded" when its `children` is non-null (loaded on demand).
+// Only those folders are recursively re-read; collapsed folders stay lazy.
+//
+// Works for both FSA (handle) and server-backed (serverPath) roots.
+//
+// @param {Array}  oldTree — current tree (may have lazily-loaded children)
+// @param {Object} rootRef — { handle } or { serverPath } describing the root
+// @returns {Promise<Array>} the refreshed top-level tree
+
+async function mergeTreeExpansion(oldNodes, freshNodes) {
+  const oldByPath = new Map((oldNodes || []).map(n => [n.path, n]));
+  for (const fresh of freshNodes) {
+    if (fresh.kind !== 'directory') continue;
+    const old = oldByPath.get(fresh.path);
+    // Recurse only into folders that were previously loaded/expanded
+    if (old && old.kind === 'directory' && old.children != null) {
+      try {
+        const freshChildren = await loadChildren(fresh);
+        fresh.children = await mergeTreeExpansion(old.children, freshChildren);
+      } catch {
+        fresh.children = old.children; // keep stale children on read error
+      }
+    }
+  }
+  return freshNodes;
+}
+
+export async function refreshTree(oldTree, rootRef) {
+  if (!rootRef || (!rootRef.handle && !rootRef.serverPath)) return oldTree || [];
+  const rootNode = rootRef.handle
+    ? { kind: 'directory', path: '', handle: rootRef.handle }
+    : { kind: 'directory', path: '', serverPath: rootRef.serverPath };
+  const freshTop = await loadChildren(rootNode);
+  return mergeTreeExpansion(oldTree || [], freshTop);
+}
+
 // ── Public: find a tree node by its path ───────────────────
 
 export function findNodeByPath(tree, path) {
