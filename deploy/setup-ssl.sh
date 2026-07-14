@@ -30,6 +30,11 @@ else
     echo "  sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN"
 fi
 
+echo "=== 3b. Ensure default_server on HTTP listen ==="
+# certbot may remove default_server; re-add it so IP access works
+sudo sed -i 's/listen 80;/listen 80 default_server;/g' /etc/nginx/conf.d/notesview.conf
+sudo sed -i 's/listen \[::\]:80;/listen [::]:80 default_server;/g' /etc/nginx/conf.d/notesview.conf
+
 echo "=== 4. Reload nginx ==="
 sudo nginx -t && sudo systemctl reload nginx
 
