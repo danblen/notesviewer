@@ -48,7 +48,7 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Deploy frontend & backend to EC2
+      - name: Prepare EC2 directories
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: 34.229.154.15
@@ -64,19 +64,27 @@ jobs:
           host: 34.229.154.15
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "dist/*,server/clone-server.cjs"
+          source: "dist/*,server/clone-server.cjs,deploy/*"
           target: /tmp/deploy-notesview
           strip_components: 0
 
-      - name: Install & restart
+      - name: Deploy frontend, backend & setup HTTPS
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: 34.229.154.15
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Deploy frontend
             sudo rm -rf /usr/share/nginx/html/*
             sudo cp -r /tmp/deploy-notesview/dist/* /usr/share/nginx/html/
+
+            # Deploy backend
             sudo cp /tmp/deploy-notesview/server/clone-server.cjs /opt/notesview/
             sudo systemctl restart notesview
+
+            # Setup nginx config & SSL (idempotent — safe to re-run)
+            sudo bash /tmp/deploy-notesview/deploy/setup-ssl.sh
+
+            # Cleanup
             rm -rf /tmp/deploy-notesview
