@@ -56,7 +56,7 @@ function loadNum(key, fallback, min, max) {
 function loadLayout() {
   const v = localStorage.getItem(LS_LAYOUT);
   const valid = ['top-left', 'left-only', 'auto-hide'];
-  return valid.includes(v) ? v : 'top-left';
+  return valid.includes(v) ? v : 'left-only';
 }
 
 // ── Error boundary: prevents GitDiffPanel (or any child) render errors ──
