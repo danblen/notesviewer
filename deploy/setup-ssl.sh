@@ -23,8 +23,19 @@ if [ -f /etc/letsencrypt/live/$DOMAIN/fullchain.pem ]; then
   exit 0
 fi
 
-echo "=== 3. Get SSL certificate ==="
-sudo certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$EMAIL"
+echo "=== 3. Get SSL certificate (retry-safe) ==="
+# Retry certbot up to 3 times — DNS propagation may have been delayed
+for i in 1 2 3; do
+  echo "Attempt $i/3..."
+  if sudo certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$EMAIL"; then
+    echo "=== SSL certificate obtained successfully ==="
+    break
+  fi
+  if [ $i -lt 3 ]; then
+    echo "certbot failed, waiting 30s before retry..."
+    sleep 30
+  fi
+done
 
 echo "=== 4. Reload nginx with HTTPS ==="
 sudo nginx -t && sudo systemctl reload nginx
