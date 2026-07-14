@@ -75,6 +75,10 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Setup nginx config & SSL (run BEFORE copying frontend,
+            # because dnf install creates an empty /usr/share/nginx/html/)
+            sudo bash /tmp/deploy-notesview/deploy/setup-ssl.sh
+
             # Deploy frontend
             sudo rm -rf /usr/share/nginx/html/*
             sudo cp -r /tmp/deploy-notesview/dist/* /usr/share/nginx/html/
@@ -82,9 +86,6 @@ jobs:
             # Deploy backend
             sudo cp /tmp/deploy-notesview/server/clone-server.cjs /opt/notesview/
             sudo systemctl restart notesview
-
-            # Setup nginx config & SSL (idempotent — safe to re-run)
-            sudo bash /tmp/deploy-notesview/deploy/setup-ssl.sh
 
             # Cleanup
             rm -rf /tmp/deploy-notesview
