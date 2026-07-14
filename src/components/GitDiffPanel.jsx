@@ -99,7 +99,7 @@ export default function GitDiffPanel({
               <path d="M12.5 8a4.5 4.5 0 1 1-1.3-3.2M12.5 3v3h-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
             </svg>
           </button>
-          <button className="git-icon-btn" onClick={onClose} title="关闭">
+          <button className="git-icon-btn" onMouseEnter={onClose} title="关闭">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
               <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
             </svg>

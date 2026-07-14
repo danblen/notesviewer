@@ -186,12 +186,10 @@ export default function App() {
   const [revealPath, setRevealPath] = useState(null);
   const [scrollTarget, setScrollTarget] = useState(null); // { line, path }
   const rightPanelTimerRef = useRef(null);
-  const rightPanelLeaveTimerRef = useRef(null);
   const searchFileHoverTimerRef = useRef(null);
 
   const openRightPanel = useCallback((panel) => {
     clearTimeout(rightPanelTimerRef.current);
-    clearTimeout(rightPanelLeaveTimerRef.current);
     rightPanelTimerRef.current = setTimeout(() => setActiveRightPanel(panel), 80);
   }, []);
 
@@ -199,16 +197,6 @@ export default function App() {
     clearTimeout(rightPanelTimerRef.current);
     setActiveRightPanel(null);
   }, []);
-
-  const schedulePanelClose = useCallback(() => {
-    clearTimeout(rightPanelLeaveTimerRef.current);
-    rightPanelLeaveTimerRef.current = setTimeout(() => setActiveRightPanel(null), 300);
-  }, []);
-
-  const cancelPanelClose = useCallback(() => {
-    clearTimeout(rightPanelLeaveTimerRef.current);
-  }, []);
-
 
   const handleSearchResultLeave = useCallback(() => {
     clearTimeout(searchFileHoverTimerRef.current);
@@ -945,8 +933,6 @@ export default function App() {
         <div
           className={`right-panel-slot${!activeRightPanel ? ' collapsed' : ''}`}
           style={{ width: activeRightPanel ? rightPanelWidth : 0 }}
-          onMouseEnter={cancelPanelClose}
-          onMouseLeave={schedulePanelClose}
         >
           <div
             className="resizer right-panel-resizer"
