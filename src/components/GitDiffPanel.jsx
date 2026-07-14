@@ -21,7 +21,7 @@ function ChangeTreeNode({ node, depth, selectedPath, onFileClick }) {
       <div
         className={`git-tree-file ${isSelected ? 'selected' : ''}`}
         style={{ paddingLeft: 8 + indent }}
-        onClick={() => onFileClick(node)}
+        onMouseEnter={() => onFileClick(node)}
         title={node.path}
       >
         <span className="git-file-icon"><FileIcon size={13} /></span>

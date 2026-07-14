@@ -326,8 +326,6 @@ export default function App() {
   const handleGitFileClick = useCallback(async (fileNode) => {
     if (selectedGitFile?.path === fileNode.path) {
       // Deselect on re-click
-      setSelectedGitFile(null);
-      setGitDiffData(null);
       return;
     }
     setSelectedGitFile(fileNode);
