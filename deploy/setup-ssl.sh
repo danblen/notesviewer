@@ -1,4 +1,4 @@
-#!/bin/bash
+	#!/bin/bash
 # setup-ssl.sh — Run ONCE on EC2 to get SSL cert and configure nginx
 # Idempotent: safe to re-run on every deploy
 
@@ -23,21 +23,33 @@ if [ -f /etc/letsencrypt/live/$DOMAIN/fullchain.pem ]; then
   exit 0
 fi
 
-echo "=== 3. Get SSL certificate (retry-safe) ==="
-# Retry certbot up to 3 times — DNS propagation may have been delayed
+echo "=== 3. Get SSL certificate via standalone HTTP (retry-safe) ==="
+# Stop nginx temporarily so certbot standalone can bind port 80
+sudo systemctl stop nginx
+
 for i in 1 2 3; do
   echo "Attempt $i/3..."
-  if sudo certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$EMAIL"; then
+  if sudo certbot certonly --standalone -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --preferred-challenges http; then
     echo "=== SSL certificate obtained successfully ==="
     break
   fi
+  echo "certbot attempt $i failed."
   if [ $i -lt 3 ]; then
-    echo "certbot failed, waiting 30s before retry..."
+    echo "Waiting 30s before retry..."
     sleep 30
   fi
 done
 
-echo "=== 4. Reload nginx with HTTPS ==="
+# Final check
+if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  echo "=== WARNING: SSL certificate could not be obtained after 3 attempts ==="
+  echo "=== The site will run on HTTP only. ==="
+  echo "=== To retry manually, SSH in and run: ==="
+  echo "  sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN"
+fi
+
+echo "=== 4. Convert cert to nginx-compatible format & reload ==="
+sudo systemctl start nginx
 sudo nginx -t && sudo systemctl reload nginx
 
 echo "=== 5. Enable auto-renewal ==="
