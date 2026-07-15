@@ -17,6 +17,7 @@ const { spawn, execFile, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const rag = require('./rag-engine.cjs');
 
 // ── Constants ─────────────────────────────────────────────
 
@@ -243,6 +244,10 @@ const server = http.createServer((req, res) => {
     if (url.startsWith('/api/read-file') && req.method === 'GET') return handleReadFile(res, url);
     if (url.startsWith('/api/git-status') && req.method === 'GET') return handleGitStatus(res, url);
     if (url.startsWith('/api/git-diff') && req.method === 'GET') return handleGitDiff(res, url);
+    if (url.startsWith('/api/rag/index') && req.method === 'POST') return rag.handleIndex(req, res);
+    if (url.startsWith('/api/rag/query') && req.method === 'POST') return rag.handleQuery(req, res);
+    if (url.startsWith('/api/rag/status') && req.method === 'GET') return rag.handleStatus(res, url);
+    if (url.startsWith('/api/rag/clear') && req.method === 'POST') return rag.handleClear(req, res);
     sendJSON(res, 404, { error: 'Not found' });
   } catch (err) {
     console.error('[clone-server] unhandled:', err);

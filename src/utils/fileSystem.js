@@ -829,3 +829,92 @@ export async function searchInTree(rootHandle, query, opts = {}) {
 
   await walkDir(rootHandle, '');
 }
+
+// ============================================================
+// RAG document collection — walk an FSA space and read the full
+// text of indexable files so the browser can ship them to the
+// backend for embedding. Mirrors searchInTree's traversal.
+// ============================================================
+
+const MAX_RAG_FILE_SIZE = 512 * 1024; // 512 KB — matches server MAX_INDEX_FILE_SIZE
+const RAG_COLLECT_CONCURRENCY = 8;
+
+/**
+ * Collect { path, name, content } for every indexable file under an FSA
+ * root handle. Used to feed browser-only spaces to the RAG backend.
+ *
+ * @param {FileSystemDirectoryHandle} rootHandle
+ * @param {object} opts
+ * @param {AbortSignal} opts.signal
+ * @param {(stats)=>void} opts.onProgress — called with { files }
+ * @returns {Promise<Array<{path, name, content}>>}
+ */
+export async function collectDocuments(rootHandle, opts = {}) {
+  const { signal, onProgress } = opts;
+  if (!rootHandle) return [];
+  const docs = [];
+
+  const readFile = async (fileHandle, filePath) => {
+    if (signal?.aborted) return;
+    try {
+      const file = await fileHandle.getFile();
+      if (file.size > MAX_RAG_FILE_SIZE) return;
+      const content = await file.text();
+      if (content.trim()) docs.push({ path: filePath, name: fileHandle.name, content });
+    } catch { /* unreadable — skip */ }
+  };
+
+  const walkDir = async (dirHandle, basePath) => {
+    if (signal?.aborted) return;
+    const fileEntries = [];
+    const subdirs = [];
+    for await (const entry of dirHandle.values()) {
+      if (signal?.aborted) return;
+      if (entry.kind === 'directory') {
+        if (!EXCLUDED_DIRS.has(entry.name.toLowerCase())) subdirs.push(entry);
+      } else if (isSearchableFile(entry.name)) {
+        const p = basePath ? `${basePath}/${entry.name}` : entry.name;
+        fileEntries.push({ handle: entry, path: p });
+      }
+    }
+
+    for (let i = 0; i < fileEntries.length; i += RAG_COLLECT_CONCURRENCY) {
+      if (signal?.aborted) return;
+      const batch = fileEntries.slice(i, i + RAG_COLLECT_CONCURRENCY);
+      await Promise.all(batch.map(f => readFile(f.handle, f.path)));
+      onProgress?.({ files: docs.length });
+    }
+
+    for (const sub of subdirs) {
+      if (signal?.aborted) return;
+      const p = basePath ? `${basePath}/${sub.name}` : sub.name;
+      await walkDir(sub, p);
+    }
+  };
+
+  await walkDir(rootHandle, '');
+  return docs;
+}
+
+/**
+ * Resolve a relative path (e.g. "a/b/c.md") under an FSA root handle to a
+ * file tree node carrying its FileSystemFileHandle. Used to open a RAG
+ * citation whose source file may not be loaded in the tree yet.
+ * Returns null if the path can't be resolved.
+ */
+export async function resolveFileNodeByPath(rootHandle, relPath) {
+  if (!rootHandle || !relPath) return null;
+  const segments = relPath.split('/').filter(Boolean);
+  if (segments.length === 0) return null;
+  try {
+    let dir = rootHandle;
+    for (let i = 0; i < segments.length - 1; i++) {
+      dir = await dir.getDirectoryHandle(segments[i]);
+    }
+    const name = segments[segments.length - 1];
+    const handle = await dir.getFileHandle(name);
+    return { id: relPath, name, kind: 'file', path: relPath, handle };
+  } catch {
+    return null;
+  }
+}

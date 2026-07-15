@@ -1,10 +1,11 @@
-import { LayoutIcon, SearchIcon } from './components/Icons';
+import { LayoutIcon, SearchIcon, SparklesIcon } from './components/Icons';
 import { useState, useRef, useCallback, useEffect, memo, Component } from 'react';
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
 import ContentArea from './components/ContentArea';
 import CloneModal from './components/CloneModal';
 import SearchPanel from './components/SearchPanel';
+import RagPanel from './components/RagChat';
 import GitDiffPanel from './components/GitDiffPanel';
 import { useDropdownGroup } from './hooks/useDropdownGroup';
 import {
@@ -29,6 +30,7 @@ import {
   openFolderAsWorkspace,
   openPathAsSpace,
   refreshTree,
+  resolveFileNodeByPath,
 } from './utils/fileSystem';
 import {
   isGitRepoFsa,
@@ -924,6 +926,43 @@ export default function App() {
     }, 200);
   }, [layoutMode, handleLevel2Hover]);
 
+  // ── Click a RAG citation → open the cited file + scroll to its line ──
+  const handleRagCitationClick = useCallback(async (citation) => {
+    if (!citation || dirtyRef.current) return;
+    const relPath = citation.path;
+
+    let fileNode = null;
+    if (rootHandleRef.current) {
+      // FSA space: resolve the file handle from its relative path.
+      fileNode = await resolveFileNodeByPath(rootHandleRef.current, relPath);
+    } else if (serverRootRef.current) {
+      // Server-backed space: build a node carrying the absolute serverPath.
+      fileNode = {
+        id: relPath,
+        name: citation.name,
+        kind: 'file',
+        path: relPath,
+        serverPath: citation.serverPath,
+      };
+    }
+    if (!fileNode) return;
+
+    if (currentFileIdRef.current !== relPath) {
+      const type = getFileType(citation.name);
+      setCurrentFile({ node: fileNode, name: citation.name, path: relPath, type });
+      currentFileIdRef.current = relPath;
+
+      const segments = relPath.split('/');
+      if (segments.length >= 2) {
+        const l2Node = fileTreeRef.current.find(n => n.path === segments[0]);
+        if (l2Node && layoutMode === 'top-left') handleLevel2Hover(l2Node);
+      }
+      setRevealPath(relPath);
+    }
+
+    if (citation.startLine) setScrollTarget({ line: citation.startLine, path: relPath });
+  }, [layoutMode, handleLevel2Hover]);
+
 
   // ── Sidebar resize (delta-based, no ref needed) ──────────
   const onSidebarResizeStart = useCallback((e) => {
@@ -1032,6 +1071,9 @@ export default function App() {
           <div className={`right-panel-trigger-icon${activeRightPanel === 'search' ? ' active' : ''}`} onMouseEnter={() => openRightPanel('search')} title="搜索">
             <SearchIcon size={16} className="trigger-icon" />
           </div>
+          <div className={`right-panel-trigger-icon${activeRightPanel === 'rag' ? ' active' : ''}`} onMouseEnter={() => openRightPanel('rag')} title="AI 问答">
+            <SparklesIcon size={16} className="trigger-icon" />
+          </div>
           {isGitRepo && (
             <div className={`right-panel-trigger-icon git${activeRightPanel === 'git' ? ' active' : ''}`} onMouseEnter={() => openRightPanel('git')} title="Git 更改">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="trigger-icon">
@@ -1065,6 +1107,17 @@ export default function App() {
                 onHoverResult={handleSearchResultHover}
                 onLeaveResult={handleSearchResultLeave}
               />
+            )}
+            {activeRightPanel === 'rag' && (
+              <PanelErrorBoundary>
+                <RagPanel
+                  rootHandle={rootHandleRef.current}
+                  serverRoot={serverRootRef.current}
+                  spaceId={activeSpaceId}
+                  rootName={rootName}
+                  onCitationClick={handleRagCitationClick}
+                />
+              </PanelErrorBoundary>
             )}
             {activeRightPanel === 'git' && (
               <PanelErrorBoundary>
