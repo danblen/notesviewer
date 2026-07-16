@@ -1186,6 +1186,48 @@ body {
   object-fit: contain;
 }
 
+/* ── Audio / video viewer ───────────────────────── */
+.media-viewer-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 100%;
+  padding: 32px;
+  background: var(--color-bg);
+}
+.audio-viewer {
+  width: 100%;
+  max-width: 520px;
+}
+.video-viewer {
+  max-width: 100%;
+  max-height: calc(100vh - var(--topbar-height) - 64px);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  background: #000;
+}
+.media-viewer-name {
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  color: var(--color-text-3);
+  word-break: break-all;
+  text-align: center;
+}
+
+/* ── Large-file truncation banner ────────────────── */
+.content-truncated-banner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 16px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-2);
+  background: var(--color-warning-bg, #fff8e6);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
 /* ── Code viewer ─────────────────────────────────────────── */
 .code-viewer {
   display: flex;

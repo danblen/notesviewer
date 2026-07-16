@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import hljs from 'highlight.js';
-import { getFileObject, getCodeLanguage, writeFileContent } from '../utils/fileSystem';
+import { getFileObject, getCodeLanguage, writeFileContent, readFileTextCapped, looksBinary, formatFileSize, MAX_TEXT_VIEW_SIZE } from '../utils/fileSystem';
 import { EditIcon, SaveIcon, EyeIcon, ExitIcon } from './Icons';
 import GitDiffViewer from './GitDiffViewer';
 
@@ -143,8 +143,10 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
           <div className="content-inner" style={{ maxWidth: effMax }}>
             {file.type === 'markdown' && <MarkdownViewer file={file} scrollTarget={scrollTarget} />}
             {file.type === 'image' && <ImageViewer file={file} />}
+            {file.type === 'audio' && <AudioViewer file={file} />}
+            {file.type === 'video' && <VideoViewer file={file} />}
             {(file.type === 'code' || file.type === 'text') && <CodeViewer file={file} scrollTarget={scrollTarget} />}
-            {file.type === 'other' && <UnsupportedViewer file={file} />}
+            {file.type === 'other' && <CodeViewer file={file} scrollTarget={scrollTarget} fallback />}
           </div>
         )}
       </div>
@@ -183,18 +185,22 @@ function Editor({ file, onDirtyChange, onExit }) {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [truncated, setTruncated] = useState(false);
 
-  // Load file text
+  // Load file text (capped). A truncated load means the file is too large
+  // to edit safely — saving would overwrite the original with a partial
+  // copy, so we switch the editor to read-only in that case.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     setDirty(false);
-    getFileObject(file.node).then(async (f) => {
-      const t = await f.text();
+    setTruncated(false);
+    readFileTextCapped(file.node).then(({ text, truncated }) => {
       if (!cancelled) {
-        setText(t);
-        setOriginal(t);
+        setText(text);
+        setOriginal(text);
+        setTruncated(truncated);
         setLoading(false);
       }
     }).catch((err) => {
@@ -220,7 +226,7 @@ function Editor({ file, onDirtyChange, onExit }) {
   };
 
   const handleSave = useCallback(async () => {
-    if (!dirty || saving) return;
+    if (!dirty || saving || truncated) return;
     setSaving(true);
     setError(null);
     try {
@@ -235,7 +241,7 @@ function Editor({ file, onDirtyChange, onExit }) {
     } finally {
       setSaving(false);
     }
-  }, [dirty, saving, file.node, text]);
+  }, [dirty, saving, truncated, file.node, text]);
 
   // ⌘S / Ctrl+S to save
   useEffect(() => {
@@ -281,6 +287,7 @@ function Editor({ file, onDirtyChange, onExit }) {
       <div className="editor-toolbar">
         <span className="editor-filename" title={file.name}>{file.name}</span>
         <div className="editor-actions">
+          {truncated && <span className="editor-error-msg" title="文件过大，已截断，仅供预览">文件过大 · 只读预览</span>}
           {dirty && <span className="editor-dirty" title="未保存的修改">●</span>}
           {savedFlash && <span className="editor-saved">已保存</span>}
           {isMarkdown && (
@@ -296,7 +303,7 @@ function Editor({ file, onDirtyChange, onExit }) {
           <button
             className="tool-btn primary"
             onClick={handleSave}
-            disabled={saving || !dirty}
+            disabled={saving || !dirty || truncated}
             title="保存 (⌘S)"
           >
             <SaveIcon size={14} />
@@ -317,6 +324,7 @@ function Editor({ file, onDirtyChange, onExit }) {
           onKeyDown={onKeyDown}
           spellCheck={false}
           autoFocus
+          readOnly={truncated}
           placeholder="开始编辑…"
         />
         {showPreview && isMarkdown && (
@@ -337,6 +345,8 @@ function Editor({ file, onDirtyChange, onExit }) {
 // ── Markdown ──────────────────────────────────────────────
 function MarkdownViewer({ file, scrollTarget }) {
   const [content, setContent] = useState('');
+  const [truncated, setTruncated] = useState(false);
+  const [size, setSize] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const containerRef = useRef(null);
@@ -345,10 +355,11 @@ function MarkdownViewer({ file, scrollTarget }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getFileObject(file.node).then(async (f) => {
-      const text = await f.text();
+    readFileTextCapped(file.node).then(({ text, size, truncated }) => {
       if (!cancelled) {
         setContent(text);
+        setSize(size);
+        setTruncated(truncated);
         setLoading(false);
       }
     }).catch((err) => {
@@ -402,6 +413,11 @@ function MarkdownViewer({ file, scrollTarget }) {
     if (!content) return null;
     return (
       <div className="markdown-content" ref={containerRef}>
+        {truncated && (
+          <div className="content-truncated-banner">
+            文件较大，仅渲染前 {formatFileSize(MAX_TEXT_VIEW_SIZE)}（共 {formatFileSize(size)}）
+          </div>
+        )}
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkSourceLines]}
           rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
@@ -411,7 +427,7 @@ function MarkdownViewer({ file, scrollTarget }) {
       </div>
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content]);
+  }, [content, truncated, size]);
 
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
@@ -419,21 +435,26 @@ function MarkdownViewer({ file, scrollTarget }) {
   return rendered;
 }
 
-// ── PDF ───────────────────────────────────────────────────
-function PdfViewer({ file }) {
+// ── Object-URL hook (shared by PDF / image / audio / video) ──
+// Loads the file as a Blob and exposes an object URL, revoking it on
+// unmount / file change. The browser streams media from the URL, so
+// large media files play without loading everything into the DOM.
+function useObjectUrl(fileNode) {
   const [url, setUrl] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let blobUrl = null;
     let cancelled = false;
-    getFileObject(file.node).then((f) => {
+    setUrl(null);
+    setError(null);
+    getFileObject(fileNode).then((f) => {
       if (cancelled) return;
       blobUrl = URL.createObjectURL(f);
       setUrl(blobUrl);
     }).catch((err) => {
       if (!cancelled) {
-        console.error('PDF read error:', err);
+        console.error('Media read error:', err);
         setError(err.message || String(err));
       }
     });
@@ -441,41 +462,24 @@ function PdfViewer({ file }) {
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [file.node]);
+  }, [fileNode]);
 
+  return { url, error };
+}
+
+// ── PDF ───────────────────────────────────────────────────
+function PdfViewer({ file }) {
+  const { url, error } = useObjectUrl(file.node);
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
-
   return <iframe src={url} className="pdf-viewer" title={file.name} />;
 }
 
 // ── Image ─────────────────────────────────────────────────
 function ImageViewer({ file }) {
-  const [url, setUrl] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let blobUrl = null;
-    let cancelled = false;
-    getFileObject(file.node).then((f) => {
-      if (cancelled) return;
-      blobUrl = URL.createObjectURL(f);
-      setUrl(blobUrl);
-    }).catch((err) => {
-      if (!cancelled) {
-        console.error('Image read error:', err);
-        setError(err.message || String(err));
-      }
-    });
-    return () => {
-      cancelled = true;
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [file.node]);
-
+  const { url, error } = useObjectUrl(file.node);
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
-
   return (
     <div className="image-viewer-wrapper">
       <img src={url} alt={file.name} className="image-viewer" />
@@ -483,9 +487,46 @@ function ImageViewer({ file }) {
   );
 }
 
-// ── Code (syntax highlighted, with line numbers) ────────
-function CodeViewer({ file, scrollTarget }) {
+// ── Audio ─────────────────────────────────────────────────
+function AudioViewer({ file }) {
+  const { url, error } = useObjectUrl(file.node);
+  if (error) return <ErrorDisplay message={error} />;
+  if (!url) return <div className="content-loading">加载中…</div>;
+  return (
+    <div className="media-viewer-wrapper">
+      <audio src={url} controls className="audio-viewer" />
+      <div className="media-viewer-name">{file.name}</div>
+    </div>
+  );
+}
+
+// ── Video ─────────────────────────────────────────────────
+function VideoViewer({ file }) {
+  const { url, error } = useObjectUrl(file.node);
+  if (error) return <ErrorDisplay message={error} />;
+  if (!url) return <div className="content-loading">加载中…</div>;
+  return (
+    <div className="media-viewer-wrapper">
+      <video src={url} controls className="video-viewer" />
+    </div>
+  );
+}
+
+// ── Code / text (syntax highlighted, with line numbers) ──
+// Also serves as the universal fallback for unknown file types: when
+// `fallback` is set, the file is probed and, if it looks binary, a
+// download notice is shown instead of garbled text.
+//
+// Large-file safety: content is read capped (readFileTextCapped) and the
+// line-number gutter is skipped past MAX_GUTTER_LINES so millions of DOM
+// nodes are never created.
+const MAX_GUTTER_LINES = 10000;
+
+function CodeViewer({ file, scrollTarget, fallback = false }) {
   const [content, setContent] = useState('');
+  const [truncated, setTruncated] = useState(false);
+  const [size, setSize] = useState(0);
+  const [isBinary, setIsBinary] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [highlightedHtml, setHighlightedHtml] = useState(null);
@@ -496,12 +537,15 @@ function CodeViewer({ file, scrollTarget }) {
     setLoading(true);
     setError(null);
     setHighlightedHtml(null);
-    getFileObject(file.node).then(async (f) => {
-      const text = await f.text();
-      if (!cancelled) {
-        setContent(text);
-        setLoading(false);
-      }
+    setIsBinary(false);
+    readFileTextCapped(file.node).then(({ text, size, truncated }) => {
+      if (cancelled) return;
+      // Unknown-type fallback: bail to the binary notice for non-text data.
+      setIsBinary(fallback && looksBinary(text));
+      setContent(text);
+      setSize(size);
+      setTruncated(truncated);
+      setLoading(false);
     }).catch((err) => {
       if (!cancelled) {
         console.error('Code read error:', err);
@@ -510,11 +554,11 @@ function CodeViewer({ file, scrollTarget }) {
       }
     });
     return () => { cancelled = true; };
-  }, [file.node]);
+  }, [file.node, fallback]);
 
   // Deferred highlighting — runs after paint so UI stays responsive
   useEffect(() => {
-    if (loading || error || !content) return;
+    if (loading || error || !content || isBinary) return;
     const lang = getCodeLanguage(file.name);
     const supported = lang !== 'plaintext' && hljs.getLanguage(lang);
     const tooLarge = content.length > 500_000;
@@ -527,7 +571,7 @@ function CodeViewer({ file, scrollTarget }) {
       });
       return () => cancelAnimationFrame(raf);
     }
-  }, [content, loading, error, file.name]);
+  }, [content, loading, error, isBinary, file.name]);
 
   // Scroll to a specific line (triggered by search result hover)
   useEffect(() => {
@@ -555,38 +599,65 @@ function CodeViewer({ file, scrollTarget }) {
 
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
+  if (isBinary) return <BinaryNotice file={file} size={size} />;
 
   const lang = getCodeLanguage(file.name);
   const lineCount = content ? content.split('\n').length : 0;
+  const showGutter = lineCount <= MAX_GUTTER_LINES;
 
   return (
-    <div className="code-viewer">
-      <div className="code-gutter">
-        {Array.from({ length: lineCount }, (_, i) => (
-          <div key={i} className="code-line-num">{i + 1}</div>
-        ))}
-      </div>
-      <pre className="code-pre" ref={preRef}>
-        {highlightedHtml ? (
-          <code
-            className={`hljs language-${lang}`}
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-          />
-        ) : (
-          <code>{content}</code>
+    <>
+      {truncated && (
+        <div className="content-truncated-banner">
+          文件较大，仅显示前 {formatFileSize(MAX_TEXT_VIEW_SIZE)}（共 {formatFileSize(size)}）
+        </div>
+      )}
+      <div className="code-viewer">
+        {showGutter && (
+          <div className="code-gutter">
+            {Array.from({ length: lineCount }, (_, i) => (
+              <div key={i} className="code-line-num">{i + 1}</div>
+            ))}
+          </div>
         )}
-      </pre>
-    </div>
+        <pre className="code-pre" ref={preRef}>
+          {highlightedHtml ? (
+            <code
+              className={`hljs language-${lang}`}
+              dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+            />
+          ) : (
+            <code>{content}</code>
+          )}
+        </pre>
+      </div>
+    </>
   );
 }
 
-// ── Unsupported ──────────────────────────────────────────
-function UnsupportedViewer({ file }) {
+// ── Binary file notice (unknown, non-text file) ─────────
+function BinaryNotice({ file, size }) {
+  const openRaw = async () => {
+    try {
+      const f = await getFileObject(file.node);
+      const url = URL.createObjectURL(f);
+      window.open(url, '_blank', 'noopener');
+      // Revoke later so the new tab has time to load it.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      console.error('Open raw error:', err);
+    }
+  };
   return (
     <div className="content-unsupported">
-      <div className="content-unsupported-icon">📄</div>
-      <p>不支持预览此文件格式</p>
-      <p className="content-unsupported-name">{file.name}</p>
+      <div className="content-unsupported-icon">📦</div>
+      <p>这是二进制文件，无法以文本方式预览</p>
+      <p className="content-unsupported-name">
+        {file.name}{size ? ` · ${formatFileSize(size)}` : ''}
+      </p>
+      <button className="tool-btn" onClick={openRaw} title="在新标签页用浏览器打开">
+        用浏览器打开
+      </button>
     </div>
   );
 }

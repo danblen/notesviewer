@@ -82,14 +82,66 @@ export function getCodeLanguage(filename) {
 
 // ── File type detection ──────────────────────────────────────────
 
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac', 'flac', 'opus', 'weba', 'mid', 'midi']);
+const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'm4v', 'mkv', 'avi', 'ogv']);
+
 export function getFileType(filename) {
   const ext = filename.split('.').pop().toLowerCase();
   if (['md', 'markdown', 'mdx'].includes(ext)) return 'markdown';
   if (ext === 'pdf') return 'pdf';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'].includes(ext)) return 'image';
+  if (IMAGE_EXTS.has(ext)) return 'image';
+  if (AUDIO_EXTS.has(ext)) return 'audio';
+  if (VIDEO_EXTS.has(ext)) return 'video';
   const base = filename.toLowerCase();
   if (SPECIAL_FILE_LANG[base] || CODE_LANG_MAP[ext]) return 'code';
+  // Unknown extension — the viewer will try to open it as text and
+  // fall back to a "binary file" notice only if the bytes look non-text.
   return 'other';
+}
+
+// ── Large-file / text-viewing helpers ────────────────────────────
+
+// Max bytes rendered by the text/code/markdown viewers. Larger files are
+// read only up to this cap so the DOM stays light and the UI never freezes.
+export const MAX_TEXT_VIEW_SIZE = 1024 * 1024; // 1 MB
+
+/**
+ * Read a file node as text, capped at maxBytes to keep the UI responsive
+ * on huge files. Returns { text, size, truncated }.
+ */
+export async function readFileTextCapped(fileNode, maxBytes = MAX_TEXT_VIEW_SIZE) {
+  const file = await getFileObject(fileNode);
+  const size = file.size;
+  const truncated = size > maxBytes;
+  const blob = truncated ? file.slice(0, maxBytes) : file;
+  const text = await blob.text();
+  return { text, size, truncated };
+}
+
+/**
+ * Heuristic: does this text look like binary (non-text) data?
+ * Checks a leading sample for NUL bytes and a high ratio of control chars.
+ */
+export function looksBinary(text) {
+  const sample = text.slice(0, 8000);
+  if (!sample) return false;
+  let suspicious = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const c = sample.charCodeAt(i);
+    if (c === 0) return true; // NUL byte → definitely binary
+    // control chars, excluding tab(9) LF(10) FF(12) CR(13)
+    if (c < 32 && c !== 9 && c !== 10 && c !== 12 && c !== 13) suspicious++;
+  }
+  return suspicious / sample.length > 0.15;
+}
+
+/** Human-readable file size. */
+export function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 // ── Sorting ──────────────────────────────────────────────────────
