@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx -y esbuild src/App.jsx --syntax-check)"
+    ]
+  }
+}

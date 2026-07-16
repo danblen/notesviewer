@@ -1,0 +1,26 @@
+version: 1
+
+scope:
+  include: []
+  exclude:
+    - "node_modules/**"
+    - "dist/**"
+    - "dev-dist/**"
+    - ".notesview-rag/**"
+    - ".workbuddy/**"
+
+repowiki:
+  template: ""
+  notes:
+    - text: "notesview is a React 18 + Vite 5 single-page app for browsing local note directories. It supports two mutually-exclusive storage backends: the File System Access API (Chrome/Edge) and a server-backed clone via server/clone-server.cjs (Safari/Firefox, or freshly cloned repos)."
+    - text: "File routing is driven by a single `file.type` key produced by `getFileType()` in src/utils/fileSystem.js. Valid values: markdown | pdf | image | audio | video | code | text | other. The `other` type is a soft fallback — tried as text first, then binary-detected via `looksBinary()`."
+    - text: "Large-file safety is a hard requirement: all text-based viewers (Markdown / code / text / other) must read through `readFileTextCapped()` (1 MB cap). The line-number gutter is skipped past 10,000 lines. The editor goes read-only when a file is truncated to prevent saving partial content back."
+    - text: "The backend is a tiny Node server (server/clone-server.cjs for git-clone + file serving; server/rag-engine.cjs for browser-side RAG embeddings). It is NOT a general API server — it only exists to bridge browsers that lack the File System Access API and to host the RAG engine."
+  documents: []
+
+knowledgecard:
+  notes:
+    - text: "Six knowledge cards are expected: Overview, Frontend UI layer, File system & tree, Content rendering, Backend services, Build & deploy. Do not invent additional top-level cards unless a genuinely new concern emerges."
+    - text: "File system & tree card must cover the dual-backend abstraction (FSA handle vs serverPath node), the recent-spaces IndexedDB persistence, and the search/RAG traversal helpers (searchInTree, collectDocuments, resolveFileNodeByPath)."
+    - text: "Content rendering card must cover the ContentArea router, the per-type viewer components (MarkdownViewer, PdfViewer, ImageViewer, AudioViewer, VideoViewer, CodeViewer, BinaryNotice), the Editor with dirty/save/⌘S flow, and the shared useObjectUrl hook for blob-URL lifecycle."
+    - text: "Frontend UI layer card should focus on component responsibilities and their interaction with ContentArea — Sidebar, TopBar, NavMenu, SearchPanel, GitDiffViewer, RagChat, CloneModal, SpaceSelector, LayoutToggle. Do not document styling."
