@@ -28,6 +28,10 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  // Allow a public HTTPS page (e.g. GitHub Pages / siplgo.xyz) to reach this
+  // loopback server. Chrome's Private Network Access blocks public→local
+  // requests unless the preflight response carries this header.
+  'Access-Control-Allow-Private-Network': 'true',
 };
 
 // Error patterns — shared logic with client-side parseErrorFromLog in src/utils/clone.js

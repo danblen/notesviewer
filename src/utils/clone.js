@@ -9,7 +9,12 @@
  * Last download path is persisted in localStorage.
  */
 
-import { apiUrl } from './apiConfig';
+import { apiUrl, getServerUrl, setServerUrl, isDev } from './apiConfig';
+
+// Where a locally-running clone server listens by default. Used as an
+// automatic fallback for static HTTPS deployments (e.g. GitHub Pages) that
+// have no same-origin backend.
+const LOCAL_FALLBACK = 'http://localhost:5181';
 
 /** Search GitHub repositories via the clone server proxy. */
 export async function searchRepos(query) {
@@ -33,12 +38,31 @@ export function saveLastPath(p) {
 }
 
 export async function checkHealth() {
+  // 1) Try the currently-configured base (dev proxy, same-origin nginx, or a
+  //    user-set override).
   try {
     const r = await fetch(apiUrl('/api/health'));
-    return await r.json();
-  } catch {
-    return { ok: false, error: '无法连接到克隆服务' };
+    const data = await r.json();
+    if (data && data.ok) return data;
+  } catch { /* fall through to the local-server probe */ }
+
+  // 2) Static HTTPS deployments have no same-origin backend. When not in dev
+  //    and no explicit override is set, probe the user's local clone server
+  //    directly; on success, remember it so clone/search/pick-folder target
+  //    it too. (localStorage is per-origin, so this won't leak to other
+  //    deployments opened in the same browser.)
+  if (!isDev() && !getServerUrl()) {
+    try {
+      const r = await fetch(`${LOCAL_FALLBACK}/api/health`);
+      const data = await r.json();
+      if (data && data.ok) {
+        setServerUrl(LOCAL_FALLBACK);
+        return data;
+      }
+    } catch { /* local server not reachable */ }
   }
+
+  return { ok: false, error: '无法连接到克隆服务' };
 }
 
 export async function pickFolder() {

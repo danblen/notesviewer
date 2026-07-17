@@ -239,7 +239,7 @@ export default function CloneModal({ onClose, onOpenAsSpace }) {
               {health.error ? `${health.error}。` : ''}
               {isDev()
                 ? '请确认克隆服务已随开发服务器启动（查看终端日志）'
-                : <>GitHub Pages 无后端，需在本地启动克隆服务：在 notesview 目录运行 <code>npm run server</code>，再点击「重试」。浏览器需允许访问 localhost。</>}
+                : <>此站点无后端。请在<b>本地电脑</b>的 notesview 目录运行 <code>npm run server</code> 启动克隆服务（它会把仓库克隆到你本地磁盘），然后点「重试」自动连接 <code>http://localhost:5181</code>。若仍连不上，请在浏览器允许本站点访问本地网络（Chrome 地址栏右侧会提示），或点「配置」手动填写地址。</>}
             </div>
           )}
         </div>
