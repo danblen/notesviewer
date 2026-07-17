@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import rehypeHighlight from 'rehype-highlight';
 import hljs from 'highlight.js';
 import { getFileObject, getCodeLanguage, writeFileContent, readFileTextCapped, looksBinary, formatFileSize, MAX_TEXT_VIEW_SIZE } from '../utils/fileSystem';
@@ -10,7 +11,7 @@ import GitDiffViewer from './GitDiffViewer';
 const CONTENT_MIN = 400, CONTENT_MAX = 1800;
 
 // File types that can be edited in-app (text-based)
-const EDITABLE_TYPES = new Set(['markdown', 'code', 'text']);
+const EDITABLE_TYPES = new Set(['markdown', 'code', 'text', 'html']);
 
 // ── Remark plugin: tag block elements with source line numbers ──
 // Adds data-source-line attr so the MarkdownViewer can scroll to the
@@ -47,6 +48,8 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
   const areaRef = useRef(null);
   const [areaWidth, setAreaWidth] = useState(9999);
   const [editing, setEditing] = useState(false);
+  // HTML view sub-mode: rendered preview vs. source code.
+  const [htmlMode, setHtmlMode] = useState('preview');
 
   // Track content-area width so the resizer handle stays visible
   // even when the sidebar is resized or the window changes.
@@ -63,6 +66,7 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
   // Leave edit mode (and clear dirty) whenever the open file changes.
   useEffect(() => {
     setEditing(false);
+    setHtmlMode('preview');
     onDirtyChange?.(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file?.node?.id]);
@@ -121,16 +125,38 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
   }
 
   const editable = EDITABLE_TYPES.has(file.type);
+  const isHtml = file.type === 'html';
+  const htmlPreview = isHtml && htmlMode === 'preview';
 
   return (
     <main className="content-area" ref={areaRef}>
-      {/* Floating edit button (view mode only, editable files) */}
-      {editable && !editing && (
+      {/* Floating toolbar (view mode only): HTML preview/source toggle + edit */}
+      {!editing && (isHtml || editable) && (
         <div className="content-toolbar">
-          <button className="tool-btn" onClick={() => setEditing(true)} title="编辑此文件">
-            <EditIcon size={14} />
-            <span>编辑</span>
-          </button>
+          {isHtml && (
+            <div className="seg-toggle" role="group">
+              <button
+                className={`seg-btn ${htmlMode === 'preview' ? 'active' : ''}`}
+                onClick={() => setHtmlMode('preview')}
+                title="渲染预览"
+              >
+                预览
+              </button>
+              <button
+                className={`seg-btn ${htmlMode === 'source' ? 'active' : ''}`}
+                onClick={() => setHtmlMode('source')}
+                title="查看源码"
+              >
+                源码
+              </button>
+            </div>
+          )}
+          {editable && (
+            <button className="tool-btn" onClick={() => setEditing(true)} title="编辑此文件">
+              <EditIcon size={14} />
+              <span>编辑</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -139,20 +165,22 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
           <Editor file={file} onDirtyChange={onDirtyChange} onExit={() => setEditing(false)} />
         ) : file.type === 'pdf' ? (
           <PdfViewer file={file} />
+        ) : htmlPreview ? (
+          <HtmlViewer file={file} />
         ) : (
           <div className="content-inner" style={{ maxWidth: effMax }}>
             {file.type === 'markdown' && <MarkdownViewer file={file} scrollTarget={scrollTarget} />}
             {file.type === 'image' && <ImageViewer file={file} />}
             {file.type === 'audio' && <AudioViewer file={file} />}
             {file.type === 'video' && <VideoViewer file={file} />}
-            {(file.type === 'code' || file.type === 'text') && <CodeViewer file={file} scrollTarget={scrollTarget} />}
+            {(file.type === 'code' || file.type === 'text' || isHtml) && <CodeViewer file={file} scrollTarget={scrollTarget} />}
             {file.type === 'other' && <CodeViewer file={file} scrollTarget={scrollTarget} fallback />}
           </div>
         )}
       </div>
 
-      {/* Width handle — hidden while editing (editor uses full width) */}
-      {!editing && (
+      {/* Width handle — hidden while editing / in HTML preview (full-width iframe) */}
+      {!editing && !htmlPreview && (
         <div
           className="content-resizer"
           style={{ left: Math.max(0, effMax - 3) }}
@@ -330,7 +358,7 @@ function Editor({ file, onDirtyChange, onExit }) {
         {showPreview && isMarkdown && (
           <div className="editor-preview markdown-content">
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
               rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
             >
               {text}
@@ -419,7 +447,7 @@ function MarkdownViewer({ file, scrollTarget }) {
           </div>
         )}
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkSourceLines]}
+          remarkPlugins={[remarkGfm, remarkBreaks, remarkSourceLines]}
           rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         >
           {content}
@@ -473,6 +501,26 @@ function PdfViewer({ file }) {
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
   return <iframe src={url} className="pdf-viewer" title={file.name} />;
+}
+
+// ── HTML (rendered preview) ───────────────────────────────
+// Renders the file in a sandboxed iframe. The iframe runs with a null
+// origin (no allow-same-origin), so scripts in the previewed HTML cannot
+// reach the app's storage or DOM — self-contained pages still render and
+// stay interactive. Relative resource links won't resolve from a blob URL;
+// use the source toggle for those.
+function HtmlViewer({ file }) {
+  const { url, error } = useObjectUrl(file.node);
+  if (error) return <ErrorDisplay message={error} />;
+  if (!url) return <div className="content-loading">加载中…</div>;
+  return (
+    <iframe
+      src={url}
+      className="html-viewer"
+      title={file.name}
+      sandbox="allow-scripts allow-popups allow-forms allow-modals"
+    />
+  );
 }
 
 // ── Image ─────────────────────────────────────────────────

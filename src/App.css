@@ -987,6 +987,36 @@ body {
   border-color: var(--color-accent);
 }
 
+/* ── Segmented toggle (HTML preview / source) ──── */
+.seg-toggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-bg);
+}
+.seg-btn {
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-2);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--color-border);
+}
+.seg-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+.seg-btn.active {
+  background: var(--color-accent);
+  color: #fff;
+}
+
 /* ── Editor ─────────────────────────────────────────────── */
 .editor-wrap {
   flex: 1;
@@ -1166,6 +1196,16 @@ body {
   min-height: 0;
   border: none;
   background: var(--color-bg);
+  display: block;
+}
+
+/* ── HTML viewer (rendered preview) ───────────── */
+.html-viewer {
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  border: none;
+  background: #fff;
   display: block;
 }
 

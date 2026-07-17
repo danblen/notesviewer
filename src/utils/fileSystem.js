@@ -93,6 +93,9 @@ export function getFileType(filename) {
   if (IMAGE_EXTS.has(ext)) return 'image';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
+  // HTML gets a rendered preview (with a source toggle). Checked before
+  // the code map because html/htm also live there as 'xml' for highlighting.
+  if (['html', 'htm', 'xhtml'].includes(ext)) return 'html';
   const base = filename.toLowerCase();
   if (SPECIAL_FILE_LANG[base] || CODE_LANG_MAP[ext]) return 'code';
   // Unknown extension — the viewer will try to open it as text and
