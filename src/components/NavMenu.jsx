@@ -1,8 +1,6 @@
 import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import {
   FolderIcon, FileTypeIcon, ChevronRight,
-  MoreIcon, RenameIcon, NewFolderIcon, TrashIcon,
-  OpenWorkspaceIcon,
 } from './Icons';
 
 /**
@@ -45,12 +43,6 @@ function NavMenuInner({
     expandLoadingRef.current = new Set();
   }
 
-  // More-menu (⋯) state
-  const [moreMenu, setMoreMenu] = useState(null);      // { item, pos }
-  const [confirmDelete, setConfirmDelete] = useState(null); // { item }
-  const moreOpenTimer = useRef(null);
-  const moreCloseTimer = useRef(null);
-
   // Inline rename
   const [renaming, setRenaming] = useState(null);      // { id, value }
   const renameInputRef = useRef(null);
@@ -70,85 +62,6 @@ function NavMenuInner({
   const handleExpandLeave = useCallback(() => {
     clearTimeout(toggleTimerRef.current);
   }, []);
-
-  // ── ⋯ button hover → open action dropdown ────────────────
-  const handleMoreEnter = useCallback((item, e) => {
-    clearTimeout(moreCloseTimer.current);
-    onFileLeave?.(e); // cancel pending file-open (pass event for relatedTarget check)
-    const rect = e.currentTarget.getBoundingClientRect();
-    moreOpenTimer.current = setTimeout(() => {
-      const menuW = 168;
-      const left = rect.right + 6 + menuW > window.innerWidth
-        ? Math.max(4, rect.left - menuW - 6)
-        : rect.right + 6;
-      setMoreMenu({ item, pos: { top: rect.top, left } });
-      setConfirmDelete(null);
-    }, 80);
-  }, [onFileLeave]);
-
-  const handleMoreLeave = useCallback(() => {
-    clearTimeout(moreOpenTimer.current);
-    if (confirmDelete) return; // sticky in confirmation mode
-    moreCloseTimer.current = setTimeout(() => {
-      setMoreMenu(null);
-      setConfirmDelete(null);
-    }, 300);
-  }, [confirmDelete]);
-
-  const handleMenuEnter = useCallback(() => {
-    clearTimeout(moreCloseTimer.current);
-  }, []);
-
-  const handleMenuLeave = useCallback(() => {
-    if (confirmDelete) return; // sticky in confirmation mode
-    moreCloseTimer.current = setTimeout(() => {
-      setMoreMenu(null);
-      setConfirmDelete(null);
-    }, 300);
-  }, [confirmDelete]);
-
-  const closeMore = useCallback(() => {
-    setMoreMenu(null);
-    setConfirmDelete(null);
-  }, []);
-
-  // ── Open as workspace ────────────────────────────────────
-  const handleOpenAsWorkspaceClick = useCallback(() => {
-    if (!moreMenu?.item) return;
-    const item = moreMenu.item;
-    closeMore();
-    onOpenAsWorkspace?.(item);
-  }, [moreMenu, closeMore, onOpenAsWorkspace]);
-
-
-  // ── Dropdown action handlers ─────────────────────────────
-  const startRename = useCallback((item) => {
-    setRenaming({ id: item.id, value: item.name });
-    closeMore();
-  }, [closeMore]);
-
-  const startCreate = useCallback((item, type) => {
-    setExpandedItemId(item.id); // auto-expand
-    const defaultName = type === 'folder' ? '新建文件夹' : 'untitled.md';
-    setCreating({ dirId: item.id, type, value: defaultName });
-    closeMore();
-  }, [closeMore]);
-
-  const startConfirmDelete = useCallback(() => {
-    setConfirmDelete({ item: moreMenu.item });
-  }, [moreMenu]);
-
-  const doDelete = useCallback(async () => {
-    const item = confirmDelete?.item;
-    if (!item) return;
-    closeMore();
-    if (expandedItemId === item.id) setExpandedItemId(null);
-    try {
-      await onDeleteEntry?.(item);
-    } catch (err) {
-      alert(`删除失败：\n${err.message}`);
-    }
-  }, [confirmDelete, closeMore, expandedItemId, onDeleteEntry]);
 
   // ── Rename commit / cancel ───────────────────────────────
   const commitRename = useCallback(async () => {
@@ -233,22 +146,6 @@ function NavMenuInner({
     return null;
   }
 
-  const isMoreOpen = (id) => moreMenu?.item.id === id;
-
-  // ── Shared ⋯ button ──────────────────────────────────────
-  const moreBtn = (item) => (
-    <span className="nav-item-actions">
-      <button
-        className="nav-action-btn more"
-        onMouseEnter={(e) => handleMoreEnter(item, e)}
-        onMouseLeave={handleMoreLeave}
-        title="更多操作"
-      >
-        <MoreIcon size={14} />
-      </button>
-    </span>
-  );
-
   // ── Shared rename input (only constructed when renaming is active) ──
   // NOTE: must be guarded — `renaming` is null by default, and constructing
   // this JSX unconditionally would read `renaming.value` and crash the whole
@@ -280,7 +177,7 @@ function NavMenuInner({
           <div key={item.id} className="nav-item-wrapper">
             {item.kind === 'directory' ? (
               <>
-                <div className={`nav-item-row folder-row ${isMoreOpen(item.id) ? 'more-open' : ''}`}>
+                <div className="nav-item-row folder-row">
                   {item.kind === 'directory'
                   ? (item.children !== null && item.children.length === 0
                     ? <span className="expand-icon-placeholder" />
@@ -293,8 +190,7 @@ function NavMenuInner({
                       </span>)
                   : <span className="expand-icon-placeholder" />}
                   <span className="nav-item-icon"><FolderIcon size={15} /></span>
-                  {isRenaming ? renameInput : <span className="nav-item-name">{item.name}</span>}
-                  {!isRenaming && moreBtn(item)}
+                  {isRenaming ? renameInput : <span className="nav-item-name" title={item.name}>{item.name}</span>}
                 </div>
 
                 {/* Inline children — expanded below parent, indented */}
@@ -346,84 +242,18 @@ function NavMenuInner({
               </>
             ) : (
               <div
-                className={`nav-item-row file-row ${currentFileId === item.id ? 'active' : ''} ${isMoreOpen(item.id) ? 'more-open' : ''}`}
+                className={`nav-item-row file-row ${currentFileId === item.id ? 'active' : ''}`}
                 onMouseEnter={() => onFileHover(item)}
                 onMouseLeave={onFileLeave}
               >
                 <span className="expand-icon-placeholder" />
                 <span className="nav-item-icon"><FileTypeIcon name={item.name} size={15} /></span>
-                {isRenaming ? renameInput : <span className="nav-item-name">{item.name}</span>}
-                {!isRenaming && moreBtn(item)}
+                {isRenaming ? renameInput : <span className="nav-item-name" title={item.name}>{item.name}</span>}
               </div>
             )}
           </div>
         );
       })}
-
-      {/* ⋯ Action dropdown — position:fixed, never clipped by sidebar overflow */}
-      {moreMenu && (
-        <>
-          {confirmDelete && (
-            <div className="more-overlay" onClick={closeMore} />
-          )}
-          <div
-            className="more-menu"
-            style={{
-              position: 'fixed',
-              top: `${moreMenu.pos.top}px`,
-              left: `${moreMenu.pos.left}px`,
-            }}
-            onMouseEnter={handleMenuEnter}
-            onMouseLeave={handleMenuLeave}
-          >
-            {confirmDelete ? (
-              /* ── Inline confirmation popover ── */
-              <div className="more-confirm">
-                <div className="more-confirm-msg">
-                  确认删除「{confirmDelete.item.name}」？
-                  {confirmDelete.item.kind === 'directory' && (
-                    <span className="more-confirm-sub">文件夹内所有内容将被删除</span>
-                  )}
-                </div>
-                <div className="more-confirm-actions">
-                  <button className="more-btn cancel" onClick={closeMore}>取消</button>
-                  <button className="more-btn danger" onClick={doDelete}>删除</button>
-                </div>
-              </div>
-            ) : (
-              /* ── Action menu ── */
-              <>
-                {moreMenu.item.kind === 'directory' && (
-                  <>
-                    <div className="more-menu-item" onClick={handleOpenAsWorkspaceClick}>
-                      <span className="more-menu-icon"><OpenWorkspaceIcon size={14} /></span>
-                      <span>打开为空间</span>
-                    </div>
-                    <div className="more-menu-divider" />
-                    <div className="more-menu-item" onClick={() => startCreate(moreMenu.item, 'file')}>
-                      <span className="more-menu-icon"><FileTypeIcon name="new.md" size={14} /></span>
-                      <span>新建文件</span>
-                    </div>
-                    <div className="more-menu-item" onClick={() => startCreate(moreMenu.item, 'folder')}>
-                      <span className="more-menu-icon"><NewFolderIcon size={14} /></span>
-                      <span>新建文件夹</span>
-                    </div>
-                    <div className="more-menu-divider" />
-                  </>
-                )}
-                <div className="more-menu-item" onClick={() => startRename(moreMenu.item)}>
-                  <span className="more-menu-icon"><RenameIcon size={14} /></span>
-                  <span>重命名</span>
-                </div>
-                <div className="more-menu-item danger" onClick={startConfirmDelete}>
-                  <span className="more-menu-icon"><TrashIcon size={14} /></span>
-                  <span>删除</span>
-                </div>
-              </>
-            )}
-          </div>
-        </>
-      )}
     </div>
   );
 }
