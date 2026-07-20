@@ -49,6 +49,11 @@ const SIDEBAR_MIN = 180, SIDEBAR_MAX = 520;
 const CONTENT_MIN = 400, CONTENT_MAX = 1800;
 const RIGHT_PANEL_MIN = 320, RIGHT_PANEL_MAX = 700;
 
+// Temporary switch to disable the right sidebar entirely: the floating trigger
+// strip is hidden and hover no longer expands the panel. Set back to false to
+// restore the right panel.
+const RIGHT_PANEL_DISABLED = true;
+
 function loadNum(key, fallback, min, max) {
   const v = Number(localStorage.getItem(key));
   if (!v || isNaN(v)) return fallback;
@@ -200,6 +205,7 @@ export default function App() {
   const searchFileHoverTimerRef = useRef(null);
 
   const openRightPanel = useCallback((panel) => {
+    if (RIGHT_PANEL_DISABLED) return; // temporarily disabled
     clearTimeout(rightPanelTimerRef.current);
     rightPanelTimerRef.current = setTimeout(() => setActiveRightPanel(panel), 80);
   }, []);
@@ -1067,6 +1073,7 @@ export default function App() {
           scrollTarget={scrollTarget}
         />
         {/* ── Collapsed trigger strip (visible when panel closed) ── */}
+        {!RIGHT_PANEL_DISABLED && (
         <div className="right-panel-triggers">
           <div className={`right-panel-trigger-icon${activeRightPanel === 'search' ? ' active' : ''}`} onMouseEnter={() => openRightPanel('search')} title="搜索">
             <SearchIcon size={16} className="trigger-icon" />
@@ -1088,6 +1095,7 @@ export default function App() {
             </div>
           )}
         </div>
+        )}
 
         {/* ── Expanded right panel (always rendered, width animates) ── */}
         <div
