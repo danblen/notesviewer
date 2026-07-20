@@ -1,8 +1,16 @@
 name: Deploy to GitHub Pages & EC2
 
+# Builds BOTH variants on every push to main or view, so the two paths stay
+# in sync regardless of which branch triggered the run:
+#   - main  → root paths   (GH Pages /notesviewer/ , siplgo.xyz/)
+#   - view  → /view/ paths (GH Pages /notesviewer/view/ , siplgo.xyz/view/)
+#
+# GitHub Pages serves a single site artifact per repo, so both variants are
+# built here and combined into one artifact (view nested under /view/).
+
 on:
   push:
-    branches: [main]
+    branches: [main, view]
 
 permissions:
   contents: read
@@ -20,35 +28,88 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
-      - name: Build for GitHub Pages
+
+      # ---- main variant → site/ (base /notesviewer/) ----
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-src
+      - name: Build main (GH Pages)
+        working-directory: main-src
         run: |
-          sed -i "s|base: '/|base: '/notesviewer/|" vite.config.js
+          npm ci
+          sed -i "s|base: '/'|base: '/notesviewer/'|" vite.config.js
           npm run build
+
+      # ---- view variant → site/view/ (base /notesviewer/view/) ----
+      - uses: actions/checkout@v4
+        with:
+          ref: view
+          path: view-src
+      - name: Build view (GH Pages)
+        working-directory: view-src
+        run: |
+          npm ci
+          sed -i "s|base: '/'|base: '/notesviewer/view/'|" vite.config.js
+          npm run build
+
+      - name: Combine into single Pages artifact
+        run: |
+          rm -rf site
+          mkdir -p site/view
+          cp -r main-src/dist/* site/
+          cp -r view-src/dist/* site/view/
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
       - id: deployment
         uses: actions/deploy-pages@v4
 
   deploy-ec2:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
 
-      - name: Prepare EC2 directories
+      # ---- main variant (base '/') ----
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-src
+      - name: Build main (EC2)
+        working-directory: main-src
+        run: |
+          npm ci
+          npm run build
+
+      # ---- view variant (base '/view/') ----
+      - uses: actions/checkout@v4
+        with:
+          ref: view
+          path: view-src
+      - name: Build view (EC2)
+        working-directory: view-src
+        run: |
+          npm ci
+          sed -i "s|base: '/'|base: '/view/'|" vite.config.js
+          npm run build
+
+      - name: Stage upload
+        run: |
+          rm -rf upload
+          mkdir -p upload/dist-root upload/dist-view upload/deploy
+          cp -r main-src/dist/* upload/dist-root/
+          cp -r view-src/dist/* upload/dist-view/
+          cp -r main-src/deploy/* upload/deploy/
+          cp main-src/server/clone-server.cjs upload/clone-server.cjs
+
+      - name: Prepare EC2 directory
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: 44.194.211.249
@@ -64,28 +125,30 @@ jobs:
           host: 44.194.211.249
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "dist/*,server/clone-server.cjs,deploy/*"
+          source: "upload/*"
           target: /tmp/deploy-notesview
-          strip_components: 0
+          strip_components: 1
 
-      - name: Deploy frontend, backend & setup HTTPS
+      - name: Deploy frontend (root + /view/), backend & setup HTTPS
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: 44.194.211.249
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # Setup nginx config & SSL (run BEFORE copying frontend,
-            # because dnf install creates an empty /usr/share/nginx/html/)
+            # nginx config & SSL first (dnf install may recreate the html dir)
             sudo bash /tmp/deploy-notesview/deploy/setup-ssl.sh
 
-            # Deploy frontend
+            # Root (main) frontend
             sudo rm -rf /usr/share/nginx/html/*
-            sudo cp -r /tmp/deploy-notesview/dist/* /usr/share/nginx/html/
+            sudo cp -r /tmp/deploy-notesview/dist-root/* /usr/share/nginx/html/
 
-            # Deploy backend
-            sudo cp /tmp/deploy-notesview/server/clone-server.cjs /opt/notesview/
+            # /view/ (view) frontend
+            sudo mkdir -p /usr/share/nginx/html/view
+            sudo cp -r /tmp/deploy-notesview/dist-view/* /usr/share/nginx/html/view/
+
+            # Backend (shared clone server)
+            sudo cp /tmp/deploy-notesview/clone-server.cjs /opt/notesview/
             sudo systemctl restart notesview
 
-            # Cleanup
             rm -rf /tmp/deploy-notesview
