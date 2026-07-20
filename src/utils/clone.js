@@ -14,7 +14,7 @@ import { apiUrl, getServerUrl, setServerUrl, isDev } from './apiConfig';
 // Where a locally-running clone server listens by default. Used as an
 // automatic fallback for static HTTPS deployments (e.g. GitHub Pages) that
 // have no same-origin backend.
-const LOCAL_FALLBACK = 'http://localhost:5181';
+const LOCAL_FALLBACK = 'http://localhost:5015';
 
 /** Search GitHub repositories via the clone server proxy. */
 export async function searchRepos(query) {

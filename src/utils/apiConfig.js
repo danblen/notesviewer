@@ -1,7 +1,7 @@
 /**
  * apiConfig.js — resolve the clone-server API base URL.
  *
- * In development (Vite dev server) the proxy forwards /api → localhost:5181,
+ * In development (Vite dev server) the proxy forwards /api → localhost:5015,
  * so we use relative URLs (empty base).
  *
  * In production with HTTPS (EC2 with nginx proxy), we also use relative URLs
@@ -9,11 +9,11 @@
  *
  * In production over HTTP (GitHub Pages), there is no backend on the same origin,
  * so we point at the user's locally-running clone server
- * (default http://localhost:5181).
+ * (default http://localhost:5015).
  */
 
 const LS_KEY = 'nv_clone_server_url';
-const DEFAULT_URL = 'http://localhost:5181';
+const DEFAULT_URL = 'http://localhost:5015';
 
 /** True when running under the Vite dev server (proxy is available). */
 export function isDev() {
@@ -29,7 +29,7 @@ function normalizeUrl(url) {
  * Returns '' (relative URLs) in these cases:
  *  - Dev mode (Vite proxy handles /api)
  *  - Production served over HTTPS (nginx proxies /api on the same origin)
- * Otherwise returns the stored override or the default http://localhost:5181.
+ * Otherwise returns the stored override or the default http://localhost:5015.
  */
 export function getServerUrl() {
   const override = localStorage.getItem(LS_KEY);

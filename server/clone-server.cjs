@@ -21,7 +21,7 @@ const rag = require('./rag-engine.cjs');
 
 // ── Constants ─────────────────────────────────────────────
 
-const PORT = 5181;
+const PORT = 5015;
 const CLONE_TIMEOUT = 10 * 60 * 1000;
 const MAX_BUFFER = 10 * 1024 * 1024;
 const CORS_HEADERS = {
