@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeHighlight from 'rehype-highlight';
 import hljs from 'highlight.js';
-import { getFileObject, getCodeLanguage, writeFileContent, readFileTextCapped, looksBinary, formatFileSize, MAX_TEXT_VIEW_SIZE } from '../utils/fileSystem';
+import { getCodeLanguage, looksBinary, formatFileSize, MAX_TEXT_VIEW_SIZE } from '../provider/shared';
 import { EditIcon, SaveIcon, EyeIcon, ExitIcon } from './Icons';
 import GitDiffViewer from './GitDiffViewer';
 
@@ -12,6 +12,16 @@ const CONTENT_MIN = 400, CONTENT_MAX = 1800;
 
 // File types that can be edited in-app (text-based)
 const EDITABLE_TYPES = new Set(['markdown', 'code', 'text', 'html']);
+
+// ── Provider-backed read helpers ─────────────────────────
+// Thin adapters over the FileProvider so the viewers keep their original
+// call shape (node + provider) while all I/O routes through the provider.
+function readFileTextCapped(node, provider) {
+  return provider.readFileText(node.path);
+}
+function getFileObject(node, provider) {
+  return provider.readFileBlob(node.path);
+}
 
 // ── Remark plugin: tag block elements with source line numbers ──
 // Adds data-source-line attr so the MarkdownViewer can scroll to the
@@ -44,7 +54,7 @@ function remarkSourceLines() {
  * The reading column has an adjustable max-width, controlled by a
  * draggable handle on its right edge (hidden while editing).
  */
-export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth, onDirtyChange, scrollTarget, gitFile, gitDiffData, gitDiffLoading, gitDiffError, onCloseDiff }) {
+export default function ContentArea({ file, provider, contentMaxWidth, setContentMaxWidth, onDirtyChange, scrollTarget, gitFile, gitDiffData, gitDiffLoading, gitDiffError, onCloseDiff, fullWidth = false }) {
   const areaRef = useRef(null);
   const [areaWidth, setAreaWidth] = useState(9999);
   const [editing, setEditing] = useState(false);
@@ -91,7 +101,8 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
     document.body.style.userSelect = 'none';
   }, [setContentMaxWidth]);
 
-  // Effective column width (clamped to available area)
+  // Effective column width (clamped to available area). In fullWidth mode the
+  // reading-column cap is dropped so the content fills the whole area.
   const effMax = Math.min(contentMaxWidth, areaWidth || 9999);
 
   // ── Git diff override ──────────────────────────────────
@@ -124,7 +135,7 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
     );
   }
 
-  const editable = EDITABLE_TYPES.has(file.type);
+  const editable = EDITABLE_TYPES.has(file.type) && Boolean(provider?.capabilities?.write);
   const isHtml = file.type === 'html';
   const htmlPreview = isHtml && htmlMode === 'preview';
 
@@ -162,25 +173,25 @@ export default function ContentArea({ file, contentMaxWidth, setContentMaxWidth,
 
       <div className="content-body">
         {editing && editable ? (
-          <Editor file={file} onDirtyChange={onDirtyChange} onExit={() => setEditing(false)} />
+          <Editor file={file} provider={provider} onDirtyChange={onDirtyChange} onExit={() => setEditing(false)} />
         ) : file.type === 'pdf' ? (
-          <PdfViewer file={file} />
+          <PdfViewer file={file} provider={provider} />
         ) : htmlPreview ? (
-          <HtmlViewer file={file} />
+          <HtmlViewer file={file} provider={provider} />
         ) : (
-          <div className="content-inner" style={{ maxWidth: effMax }}>
-            {file.type === 'markdown' && <MarkdownViewer file={file} scrollTarget={scrollTarget} />}
-            {file.type === 'image' && <ImageViewer file={file} />}
-            {file.type === 'audio' && <AudioViewer file={file} />}
-            {file.type === 'video' && <VideoViewer file={file} />}
-            {(file.type === 'code' || file.type === 'text' || isHtml) && <CodeViewer file={file} scrollTarget={scrollTarget} />}
-            {file.type === 'other' && <CodeViewer file={file} scrollTarget={scrollTarget} fallback />}
+          <div className="content-inner" style={{ maxWidth: fullWidth ? '100%' : effMax, width: fullWidth ? '100%' : undefined }}>
+            {file.type === 'markdown' && <MarkdownViewer file={file} provider={provider} scrollTarget={scrollTarget} />}
+            {file.type === 'image' && <ImageViewer file={file} provider={provider} />}
+            {file.type === 'audio' && <AudioViewer file={file} provider={provider} />}
+            {file.type === 'video' && <VideoViewer file={file} provider={provider} />}
+            {(file.type === 'code' || file.type === 'text' || isHtml) && <CodeViewer file={file} provider={provider} scrollTarget={scrollTarget} />}
+            {file.type === 'other' && <CodeViewer file={file} provider={provider} scrollTarget={scrollTarget} fallback />}
           </div>
         )}
       </div>
 
-      {/* Width handle — hidden while editing / in HTML preview (full-width iframe) */}
-      {!editing && !htmlPreview && (
+      {/* Width handle — hidden while editing / in HTML preview (full-width iframe) / fullWidth mode */}
+      {!editing && !htmlPreview && !fullWidth && (
         <div
           className="content-resizer"
           style={{ left: Math.max(0, effMax - 3) }}
@@ -204,7 +215,7 @@ function ErrorDisplay({ message }) {
 }
 
 // ── Editor (markdown / code / text) ──────────────────────
-function Editor({ file, onDirtyChange, onExit }) {
+function Editor({ file, provider, onDirtyChange, onExit }) {
   const [text, setText] = useState('');
   const [original, setOriginal] = useState('');
   const [loading, setLoading] = useState(true);
@@ -224,7 +235,7 @@ function Editor({ file, onDirtyChange, onExit }) {
     setError(null);
     setDirty(false);
     setTruncated(false);
-    readFileTextCapped(file.node).then(({ text, truncated }) => {
+    readFileTextCapped(file.node, provider).then(({ text, truncated }) => {
       if (!cancelled) {
         setText(text);
         setOriginal(text);
@@ -239,7 +250,7 @@ function Editor({ file, onDirtyChange, onExit }) {
       }
     });
     return () => { cancelled = true; };
-  }, [file.node]);
+  }, [file.node, provider]);
 
   // Report dirty state up so App can guard hover-switching
   useEffect(() => {
@@ -258,7 +269,7 @@ function Editor({ file, onDirtyChange, onExit }) {
     setSaving(true);
     setError(null);
     try {
-      await writeFileContent(file.node, text);
+      await provider.writeFile(file.node.path, text);
       setOriginal(text);
       setDirty(false);
       setSavedFlash(true);
@@ -269,7 +280,7 @@ function Editor({ file, onDirtyChange, onExit }) {
     } finally {
       setSaving(false);
     }
-  }, [dirty, saving, truncated, file.node, text]);
+  }, [dirty, saving, truncated, provider, file.node, text]);
 
   // ⌘S / Ctrl+S to save
   useEffect(() => {
@@ -371,7 +382,7 @@ function Editor({ file, onDirtyChange, onExit }) {
 }
 
 // ── Markdown ──────────────────────────────────────────────
-function MarkdownViewer({ file, scrollTarget }) {
+function MarkdownViewer({ file, provider, scrollTarget }) {
   const [content, setContent] = useState('');
   const [truncated, setTruncated] = useState(false);
   const [size, setSize] = useState(0);
@@ -383,7 +394,7 @@ function MarkdownViewer({ file, scrollTarget }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    readFileTextCapped(file.node).then(({ text, size, truncated }) => {
+    readFileTextCapped(file.node, provider).then(({ text, size, truncated }) => {
       if (!cancelled) {
         setContent(text);
         setSize(size);
@@ -398,7 +409,7 @@ function MarkdownViewer({ file, scrollTarget }) {
       }
     });
     return () => { cancelled = true; };
-  }, [file.node]);
+  }, [file.node, provider]);
 
   // Scroll to the block containing the target source line
   // (triggered by search result hover)
@@ -467,7 +478,7 @@ function MarkdownViewer({ file, scrollTarget }) {
 // Loads the file as a Blob and exposes an object URL, revoking it on
 // unmount / file change. The browser streams media from the URL, so
 // large media files play without loading everything into the DOM.
-function useObjectUrl(fileNode) {
+function useObjectUrl(provider, fileNode) {
   const [url, setUrl] = useState(null);
   const [error, setError] = useState(null);
 
@@ -476,7 +487,7 @@ function useObjectUrl(fileNode) {
     let cancelled = false;
     setUrl(null);
     setError(null);
-    getFileObject(fileNode).then((f) => {
+    getFileObject(fileNode, provider).then((f) => {
       if (cancelled) return;
       blobUrl = URL.createObjectURL(f);
       setUrl(blobUrl);
@@ -490,14 +501,14 @@ function useObjectUrl(fileNode) {
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [fileNode]);
+  }, [provider, fileNode]);
 
   return { url, error };
 }
 
 // ── PDF ───────────────────────────────────────────────────
-function PdfViewer({ file }) {
-  const { url, error } = useObjectUrl(file.node);
+function PdfViewer({ file, provider }) {
+  const { url, error } = useObjectUrl(provider, file.node);
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
   return <iframe src={url} className="pdf-viewer" title={file.name} />;
@@ -509,8 +520,8 @@ function PdfViewer({ file }) {
 // reach the app's storage or DOM — self-contained pages still render and
 // stay interactive. Relative resource links won't resolve from a blob URL;
 // use the source toggle for those.
-function HtmlViewer({ file }) {
-  const { url, error } = useObjectUrl(file.node);
+function HtmlViewer({ file, provider }) {
+  const { url, error } = useObjectUrl(provider, file.node);
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
   return (
@@ -524,8 +535,8 @@ function HtmlViewer({ file }) {
 }
 
 // ── Image ─────────────────────────────────────────────────
-function ImageViewer({ file }) {
-  const { url, error } = useObjectUrl(file.node);
+function ImageViewer({ file, provider }) {
+  const { url, error } = useObjectUrl(provider, file.node);
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
   return (
@@ -536,8 +547,8 @@ function ImageViewer({ file }) {
 }
 
 // ── Audio ─────────────────────────────────────────────────
-function AudioViewer({ file }) {
-  const { url, error } = useObjectUrl(file.node);
+function AudioViewer({ file, provider }) {
+  const { url, error } = useObjectUrl(provider, file.node);
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
   return (
@@ -549,8 +560,8 @@ function AudioViewer({ file }) {
 }
 
 // ── Video ─────────────────────────────────────────────────
-function VideoViewer({ file }) {
-  const { url, error } = useObjectUrl(file.node);
+function VideoViewer({ file, provider }) {
+  const { url, error } = useObjectUrl(provider, file.node);
   if (error) return <ErrorDisplay message={error} />;
   if (!url) return <div className="content-loading">加载中…</div>;
   return (
@@ -570,7 +581,7 @@ function VideoViewer({ file }) {
 // nodes are never created.
 const MAX_GUTTER_LINES = 10000;
 
-function CodeViewer({ file, scrollTarget, fallback = false }) {
+function CodeViewer({ file, provider, scrollTarget, fallback = false }) {
   const [content, setContent] = useState('');
   const [truncated, setTruncated] = useState(false);
   const [size, setSize] = useState(0);
@@ -586,7 +597,7 @@ function CodeViewer({ file, scrollTarget, fallback = false }) {
     setError(null);
     setHighlightedHtml(null);
     setIsBinary(false);
-    readFileTextCapped(file.node).then(({ text, size, truncated }) => {
+    readFileTextCapped(file.node, provider).then(({ text, size, truncated }) => {
       if (cancelled) return;
       // Unknown-type fallback: bail to the binary notice for non-text data.
       setIsBinary(fallback && looksBinary(text));
@@ -602,7 +613,7 @@ function CodeViewer({ file, scrollTarget, fallback = false }) {
       }
     });
     return () => { cancelled = true; };
-  }, [file.node, fallback]);
+  }, [file.node, provider, fallback]);
 
   // Deferred highlighting — runs after paint so UI stays responsive
   useEffect(() => {
@@ -647,7 +658,7 @@ function CodeViewer({ file, scrollTarget, fallback = false }) {
 
   if (loading) return <div className="content-loading">加载中…</div>;
   if (error) return <ErrorDisplay message={error} />;
-  if (isBinary) return <BinaryNotice file={file} size={size} />;
+  if (isBinary) return <BinaryNotice file={file} provider={provider} size={size} />;
 
   const lang = getCodeLanguage(file.name);
   const lineCount = content ? content.split('\n').length : 0;
@@ -684,10 +695,10 @@ function CodeViewer({ file, scrollTarget, fallback = false }) {
 }
 
 // ── Binary file notice (unknown, non-text file) ─────────
-function BinaryNotice({ file, size }) {
+function BinaryNotice({ file, provider, size }) {
   const openRaw = async () => {
     try {
-      const f = await getFileObject(file.node);
+      const f = await getFileObject(file.node, provider);
       const url = URL.createObjectURL(f);
       window.open(url, '_blank', 'noopener');
       // Revoke later so the new tab has time to load it.

@@ -31,7 +31,7 @@ import {
 function NavMenuInner({
   items, onFileHover, onFileLeave, currentFileId, variant = 'sidebar',
   onDeleteEntry, onCreateFile, onCreateFolder, onRenameEntry, onLoadChildren,
-  onOpenAsWorkspace, revealPath,
+  onOpenAsWorkspace, revealPath, showActions = true,
 }) {
   const [expandedItemId, setExpandedItemId] = useState(null);
   const expandedItem = (expandedItemId && items) ? items.find(i => i.id === expandedItemId) : null;
@@ -236,7 +236,9 @@ function NavMenuInner({
   const isMoreOpen = (id) => moreMenu?.item.id === id;
 
   // ── Shared ⋯ button ──────────────────────────────────────
+  // Hidden entirely when the provider exposes no file operations.
   const moreBtn = (item) => (
+    showActions ? (
     <span className="nav-item-actions">
       <button
         className="nav-action-btn more"
@@ -247,6 +249,7 @@ function NavMenuInner({
         <MoreIcon size={14} />
       </button>
     </span>
+    ) : null
   );
 
   // ── Shared rename input (only constructed when renaming is active) ──
@@ -339,6 +342,7 @@ function NavMenuInner({
                         onLoadChildren={onLoadChildren}
                         onOpenAsWorkspace={onOpenAsWorkspace}
                         revealPath={revealPath}
+                        showActions={showActions}
                       />
                                         ) : null}
                   </div>
@@ -395,11 +399,15 @@ function NavMenuInner({
               <>
                 {moreMenu.item.kind === 'directory' && (
                   <>
-                    <div className="more-menu-item" onClick={handleOpenAsWorkspaceClick}>
-                      <span className="more-menu-icon"><OpenWorkspaceIcon size={14} /></span>
-                      <span>打开为空间</span>
-                    </div>
-                    <div className="more-menu-divider" />
+                    {onOpenAsWorkspace && (
+                      <>
+                        <div className="more-menu-item" onClick={handleOpenAsWorkspaceClick}>
+                          <span className="more-menu-icon"><OpenWorkspaceIcon size={14} /></span>
+                          <span>打开为空间</span>
+                        </div>
+                        <div className="more-menu-divider" />
+                      </>
+                    )}
                     <div className="more-menu-item" onClick={() => startCreate(moreMenu.item, 'file')}>
                       <span className="more-menu-icon"><FileTypeIcon name="new.md" size={14} /></span>
                       <span>新建文件</span>

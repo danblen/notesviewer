@@ -27,7 +27,8 @@ function SidebarInner({
   isOpen,
   rootName, loading, recentSpaces, activeSpaceId,
   onSelectDirectory, onSwitchSpace, onDeleteSpace, onCloneGithub,
-  dropdownGroup,
+  dropdownGroup, showActions = true,
+  showLayoutToggle = true, showSpaceSelector = true,
 }) {
   // More-menu (⋯) state
   const [moreMenu, setMoreMenu] = useState(null);      // { pos }
@@ -183,8 +184,10 @@ function SidebarInner({
   ) : null;
 
   // Show sidebar header (with layout toggle + space selector) in any mode
-  // that does NOT use the TopBar (i.e. 'left-only' and 'left-right').
+  // that does NOT use the TopBar (i.e. 'left-only' and 'left-right'), but
+  // only when at least one of those controls is enabled by the host.
   const isSidebarHeaderMode = layoutMode !== 'top-left';
+  const showSidebarHeader = isSidebarHeaderMode && (showLayoutToggle || showSpaceSelector);
 
   return (
     <aside
@@ -192,22 +195,26 @@ function SidebarInner({
       style={{ width }}
     >
       {/* Left-only / left-right / auto-hide mode: header with layout toggle + space switcher */}
-      {isSidebarHeaderMode && (
+      {showSidebarHeader && (
         <div className="sidebar-left-header">
-          <LayoutToggle layoutMode={layoutMode} onChangeLayout={onChangeLayout} dropdownGroup={dropdownGroup} />
-          <div className="sidebar-space-wrap">
-            <SpaceSelector
-              rootName={rootName}
-              loading={loading}
-              recentSpaces={recentSpaces}
-              activeSpaceId={activeSpaceId}
-              onSelectDirectory={onSelectDirectory}
-              onSwitchSpace={onSwitchSpace}
-              onDeleteSpace={onDeleteSpace}
-              onCloneGithub={onCloneGithub}
-              dropdownGroup={dropdownGroup}
-            />
-          </div>
+          {showLayoutToggle && (
+            <LayoutToggle layoutMode={layoutMode} onChangeLayout={onChangeLayout} dropdownGroup={dropdownGroup} />
+          )}
+          {showSpaceSelector && (
+            <div className="sidebar-space-wrap">
+              <SpaceSelector
+                rootName={rootName}
+                loading={loading}
+                recentSpaces={recentSpaces}
+                activeSpaceId={activeSpaceId}
+                onSelectDirectory={onSelectDirectory}
+                onSwitchSpace={onSwitchSpace}
+                onDeleteSpace={onDeleteSpace}
+                onCloneGithub={onCloneGithub}
+                dropdownGroup={dropdownGroup}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -219,7 +226,7 @@ function SidebarInner({
             {renaming ? renameInput : (
               <span className="sidebar-header-name" title={folder.name}>{folder.name}</span>
             )}
-            {!renaming && (
+            {!renaming && showActions && (
               <button
                 className="nav-action-btn more"
                 onMouseEnter={handleMoreEnter}
@@ -277,6 +284,7 @@ function SidebarInner({
             onLoadChildren={onLoadChildren}
             onOpenAsWorkspace={onOpenAsWorkspace}
             revealPath={revealPath}
+            showActions={showActions}
           />
         )
       )}
@@ -312,11 +320,15 @@ function SidebarInner({
             ) : (
               /* ── Action menu ── */
               <>
-                <div className="more-menu-item" onClick={handleOpenAsWorkspaceClick}>
-                  <span className="more-menu-icon"><OpenWorkspaceIcon size={14} /></span>
-                  <span>打开为空间</span>
-                </div>
-                <div className="more-menu-divider" />
+                {onOpenAsWorkspace && (
+                  <>
+                    <div className="more-menu-item" onClick={handleOpenAsWorkspaceClick}>
+                      <span className="more-menu-icon"><OpenWorkspaceIcon size={14} /></span>
+                      <span>打开为空间</span>
+                    </div>
+                    <div className="more-menu-divider" />
+                  </>
+                )}
                 <div className="more-menu-item" onClick={() => startCreate('file')}>
                   <span className="more-menu-icon"><FileTypeIcon name="new.md" size={14} /></span>
                   <span>新建文件</span>

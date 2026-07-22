@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { SearchIcon, RegexIcon, CaseSensitiveIcon, FileTypeIcon } from './Icons';
-import { searchInTree } from '../utils/fileSystem';
 
 /**
  * SearchPanel — full-text search across the current space.
@@ -13,9 +12,9 @@ import { searchInTree } from '../utils/fileSystem';
  *    its location in the sidebar tree (via onHoverResult callback)
  *
  * Search is debounced (300ms) and cancellable (AbortController).
- * Files > 1MB are skipped; binary/image/PDF files are excluded.
+ * Backing search is delegated to `provider.search(query, opts)`.
  */
-function SearchPanelInner({ rootHandle, onHoverResult, onLeaveResult }) {
+function SearchPanelInner({ provider, onHoverResult, onLeaveResult }) {
   const [query, setQuery] = useState('');
   const [useRegex, setUseRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -35,7 +34,7 @@ function SearchPanelInner({ rootHandle, onHoverResult, onLeaveResult }) {
   // Debounced search
   useEffect(() => {
     const q = query.trim();
-    if (!q || !rootHandle) {
+    if (!q || !provider?.search) {
       setResults([]);
       setSearching(false);
       setProgress({ files: 0, matches: 0 });
@@ -59,7 +58,7 @@ function SearchPanelInner({ rootHandle, onHoverResult, onLeaveResult }) {
 
     const timer = setTimeout(async () => {
       try {
-        await searchInTree(rootHandle, q, {
+        await provider.search(q, {
           useRegex,
           caseSensitive,
           signal: controller.signal,
@@ -82,7 +81,7 @@ function SearchPanelInner({ rootHandle, onHoverResult, onLeaveResult }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, useRegex, caseSensitive, rootHandle]);
+  }, [query, useRegex, caseSensitive, provider]);
 
   const handleMatchHover = useCallback((result, match) => {
     clearTimeout(hoverTimerRef.current);

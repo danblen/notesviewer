@@ -1,0 +1,52 @@
+{
+  "name": "codeview",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Reusable file-tree + code/markdown/media viewer with a pluggable FileProvider data source. Default build is the self-contained standalone bundle (all rendering deps bundled, only React external).",
+  "license": "MIT",
+  "main": "./dist-standalone/codeview.js",
+  "module": "./dist-standalone/codeview.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./dist-standalone/codeview.js"
+    },
+    "./style.css": "./dist-standalone/codeview.css",
+    "./external": {
+      "types": "./index.d.ts",
+      "import": "./dist/codeview.js"
+    },
+    "./external.css": "./dist/codeview.css"
+  },
+  "files": [
+    "dist",
+    "dist-standalone",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "build:standalone": "vite build --config vite.config.standalone.js"
+  },
+  "peerDependencies": {
+    "diff": ">=5",
+    "highlight.js": ">=11",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "react-markdown": ">=9",
+    "rehype-highlight": ">=7",
+    "remark-breaks": ">=4",
+    "remark-gfm": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "diff": { "optional": true },
+    "rehype-highlight": { "optional": true },
+    "remark-breaks": { "optional": true },
+    "remark-gfm": { "optional": true }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0"
+  }
+}

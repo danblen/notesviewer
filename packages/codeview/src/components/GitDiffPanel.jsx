@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronRight, FileIcon, FolderIcon } from './Icons';
-import { buildChangeTree } from '../utils/gitUtils';
+import { buildChangeTree } from '../provider/shared';
 
 const STATUS_CONFIG = {
   modified:  { label: 'M', color: '#d29922', bg: 'rgba(210, 153, 34, 0.12)', title: '已修改' },
